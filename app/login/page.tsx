@@ -1,7 +1,5 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
@@ -10,11 +8,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useAuth } from "@/components/auth-provider"
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Client, Account } from "appwrite"
 
 export default function LoginPage() {
-  const { login } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect") || "/account"
@@ -25,12 +22,12 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
 
-  // Identifiants de test pour faciliter les tests
-  const testCredentials = [
-    { email: "test@example.com", password: "password123", label: "Utilisateur standard" },
-    { email: "admin@example.com", password: "admin123", label: "Administrateur" },
-    { email: "vip@example.com", password: "vip123", label: "Client VIP" },
-  ]
+  // Initialize Appwrite client
+  const client = new Client()
+    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "")
+    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "")
+
+  const account = new Account(client)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -39,35 +36,48 @@ export default function LoginPage() {
     setIsLoading(true)
 
     try {
-      const success = await login(email, password)
+      // Create session with email and password
+      const session = await account.createSession(email, password)
+      
+      // Get user details
+      const user = await account.get()
 
-      if (success) {
-        setSuccess("Connexion réussie! Redirection en cours...")
-        setTimeout(() => {
-          router.push(redirect)
-        }, 1000)
+      // Store user data in localStorage
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          id: user.$id,
+          email: user.email,
+          name: user.name,
+          isLoggedIn: true,
+        })
+      )
+
+      setSuccess("Login successful! Redirecting...")
+      setTimeout(() => {
+        router.push(redirect)
+      }, 1000)
+    } catch (err: any) {
+      console.error("Login error:", err)
+      
+      if (err.type === 'user_invalid_credentials') {
+        setError("Invalid email or password")
+      } else if (err.message.includes('rate limit')) {
+        setError("Too many attempts. Please try again later.")
       } else {
-        setError("Email ou mot de passe incorrect")
+        setError("An error occurred. Please try again.")
       }
-    } catch (err) {
-      setError("Une erreur est survenue. Veuillez réessayer.")
-      console.error(err)
     } finally {
       setIsLoading(false)
     }
-  }
-
-  const handleUseTestCredentials = (testEmail: string, testPassword: string) => {
-    setEmail(testEmail)
-    setPassword(testPassword)
   }
 
   return (
     <div className="container mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
       <Card className="mx-auto w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">Connexion</CardTitle>
-          <CardDescription>Entrez vos identifiants pour accéder à votre compte</CardDescription>
+          <CardTitle className="text-2xl font-bold">Login</CardTitle>
+          <CardDescription>Enter your credentials to access your account</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {error && (
@@ -78,7 +88,7 @@ export default function LoginPage() {
           )}
 
           {success && (
-            <Alert className="border-green-500 bg-green-50 text-green-800 dark:bg-green-900 dark:text-green-100">
+            <Alert className="border-green-500 bg-green-50 text-green-800">
               <CheckCircle2 className="h-4 w-4" />
               <AlertDescription>{success}</AlertDescription>
             </Alert>
@@ -90,7 +100,7 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                placeholder="votre@email.com"
+                placeholder="your@email.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -98,9 +108,9 @@ export default function LoginPage() {
             </div>
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="password">Mot de passe</Label>
-                <Link href="/forgot-password" className="text-xs text-amber-500 hover:underline">
-                  Mot de passe oublié?
+                <Label htmlFor="password">Password</Label>
+                <Link href="/forgot-password" className="text-xs text-primary hover:underline">
+                  Forgot password?
                 </Link>
               </div>
               <Input
@@ -109,55 +119,37 @@ export default function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={8}
               />
             </div>
-            <Button type="submit" className="w-full bg-amber-500 hover:bg-amber-600" disabled={isLoading}>
+            <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Connexion en cours...
+                  Logging in...
                 </>
               ) : (
-                "Se connecter"
+                "Login"
               )}
             </Button>
           </form>
 
-          <div className="mt-6 space-y-4">
+          <div className="mt-6">
             <div className="relative">
               <div className="absolute inset-0 flex items-center">
                 <span className="w-full border-t" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-background px-2 text-muted-foreground">Identifiants de test</span>
+                <span className="bg-background px-2 text-muted-foreground">Don't have an account?</span>
               </div>
-            </div>
-
-            <div className="grid gap-2">
-              {testCredentials.map((cred, index) => (
-                <div key={index} className="rounded-md border p-3">
-                  <div className="text-sm font-medium">{cred.label}</div>
-                  <div className="mt-1 text-xs text-muted-foreground">
-                    Email: {cred.email} | Mot de passe: {cred.password}
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-2 w-full"
-                    onClick={() => handleUseTestCredentials(cred.email, cred.password)}
-                  >
-                    Utiliser
-                  </Button>
-                </div>
-              ))}
             </div>
           </div>
         </CardContent>
         <CardFooter className="flex flex-col space-y-4">
           <div className="text-center text-sm">
-            Vous n'avez pas de compte?{" "}
-            <Link href="/register" className="font-medium text-amber-500 hover:underline">
-              Créer un compte
+            Don't have an account?{" "}
+            <Link href={`/register?redirect=${encodeURIComponent(redirect)}`} className="font-medium text-primary hover:underline">
+              Sign up
             </Link>
           </div>
         </CardFooter>

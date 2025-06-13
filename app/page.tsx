@@ -37,7 +37,7 @@ export default function HomePage() {
             <Button asChild size="lg" className="bg-amber-500 hover:bg-amber-600 text-white">
               <Link href="/search">Réserver maintenant</Link>
             </Button>
-            <Button asChild size="lg" variant="outline" className="border-white text-white hover:bg-white/10">
+            <Button asChild size="lg" variant="outline" className="border-white bg-white/10 text-white hover:bg-white/10">
               <Link href="/destinations">Explorer les destinations</Link>
             </Button>
           </div>

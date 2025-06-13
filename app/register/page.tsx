@@ -1,18 +1,16 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
-import { UserPlus, Mail, Lock, User, AlertCircle, Info } from "lucide-react"
+import { UserPlus, Mail, Lock, User, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Client, Account } from "appwrite"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -29,6 +27,13 @@ export default function RegisterPage() {
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
+  // Initialize Appwrite client
+  const client = new Client()
+    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "")
+    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "")
+
+  const account = new Account(client)
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({
@@ -37,47 +42,99 @@ export default function RegisterPage() {
     }))
   }
 
+  const generateValidUserId = (email: string): string => {
+    // Generate ID from email prefix + timestamp
+    const prefix = email.split('@')[0]
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_') // Replace special chars
+      .replace(/^[^a-z]/, 'u')    // Ensure starts with letter
+      .slice(0, 20)               // Limit length
+    
+    const timestamp = Date.now().toString(36).slice(-6)
+    const userId = `${prefix}_${timestamp}`.slice(0, 36)
+    
+    // Final validation
+    return userId.replace(/[^a-z0-9_]/g, '_')
+                 .replace(/^_/, 'u')
+                 .replace(/_$/, '0')
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
 
-    // Validation de base
+    // Validation
     if (!formData.fullName || !formData.email || !formData.password || !formData.confirmPassword) {
-      setError("Veuillez remplir tous les champs")
+      setError("Please fill in all fields")
+      return
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      setError("Please enter a valid email address")
       return
     }
 
     if (formData.password !== formData.confirmPassword) {
-      setError("Les mots de passe ne correspondent pas")
+      setError("Passwords do not match")
+      return
+    }
+
+    if (formData.password.length < 8) {
+      setError("Password must be at least 8 characters")
       return
     }
 
     if (!acceptTerms) {
-      setError("Vous devez accepter les conditions d'utilisation")
+      setError("You must accept the terms and conditions")
       return
     }
 
     setIsLoading(true)
 
     try {
-      // Simuler l'inscription
-      await new Promise((resolve) => setTimeout(resolve, 1500))
+      // Generate valid user ID
+      const userId = generateValidUserId(formData.email)
+      console.log("Generated User ID:", userId)
 
-      // Stocker les informations de l'utilisateur dans localStorage
+      // Create user account
+      const response = await account.create(
+        userId,
+        formData.email,
+        formData.password,
+        formData.fullName
+      )
+
+      // Create session using createSession (not createEmailSession)
+      const session = await account.createSession(
+        formData.email,
+        formData.password
+      )
+
+      // Store user data
       localStorage.setItem(
         "user",
         JSON.stringify({
-          email: formData.email,
-          name: formData.fullName,
-          role: "utilisateur",
+          id: response.$id,
+          email: response.email,
+          name: response.name,
           isLoggedIn: true,
-        }),
+        })
       )
 
-      // Rediriger vers la page demandée après inscription réussie
+      // Redirect after successful registration
       router.push(redirectUrl)
-    } catch (err) {
-      setError("Une erreur est survenue lors de l'inscription")
+    } catch (err: any) {
+      console.error("Registration error:", err)
+      
+      if (err.type === 'user_already_exists') {
+        setError("An account with this email already exists")
+      } else if (err.message.includes('Invalid credentials')) {
+        setError("Invalid email or password format")
+      } else if (err.message.includes('userId')) {
+        setError("System error during registration. Please try again.")
+      } else {
+        setError("Registration failed. Please try again.")
+      }
     } finally {
       setIsLoading(false)
     }
@@ -88,8 +145,8 @@ export default function RegisterPage() {
       <div className="w-full max-w-md">
         <Card>
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl font-bold">Créer un compte</CardTitle>
-            <CardDescription>Inscrivez-vous pour accéder à toutes les fonctionnalités de Mali Travel</CardDescription>
+            <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+            <CardDescription>Sign up to access all features</CardDescription>
           </CardHeader>
           <CardContent>
             {error && (
@@ -99,24 +156,16 @@ export default function RegisterPage() {
               </div>
             )}
 
-            <Alert className="mb-4 border-amber-200 bg-amber-50">
-              <Info className="h-4 w-4 text-amber-600" />
-              <AlertTitle className="text-amber-800">Inscription de test</AlertTitle>
-              <AlertDescription className="text-amber-700">
-                Vous pouvez vous inscrire avec n'importe quelles informations valides pour tester l'application.
-              </AlertDescription>
-            </Alert>
-
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="fullName">Nom complet</Label>
+                <Label htmlFor="fullName">Full Name</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
                     id="fullName"
                     name="fullName"
                     type="text"
-                    placeholder="Votre nom complet"
+                    placeholder="Your full name"
                     className="pl-10"
                     value={formData.fullName}
                     onChange={handleChange}
@@ -133,7 +182,7 @@ export default function RegisterPage() {
                     id="email"
                     name="email"
                     type="email"
-                    placeholder="votre.email@exemple.com"
+                    placeholder="your@email.com"
                     className="pl-10"
                     value={formData.email}
                     onChange={handleChange}
@@ -143,7 +192,7 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="password">Mot de passe</Label>
+                <Label htmlFor="password">Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
@@ -155,12 +204,13 @@ export default function RegisterPage() {
                     value={formData.password}
                     onChange={handleChange}
                     required
+                    minLength={8}
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="confirmPassword">Confirmer le mot de passe</Label>
+                <Label htmlFor="confirmPassword">Confirm Password</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                   <Input
@@ -172,46 +222,35 @@ export default function RegisterPage() {
                     value={formData.confirmPassword}
                     onChange={handleChange}
                     required
+                    minLength={8}
                   />
                 </div>
               </div>
 
               <div className="flex items-center space-x-2">
-                <Checkbox id="terms" checked={acceptTerms} onCheckedChange={(checked) => setAcceptTerms(!!checked)} />
+                <Checkbox 
+                  id="terms" 
+                  checked={acceptTerms} 
+                  onCheckedChange={(checked) => setAcceptTerms(!!checked)} 
+                />
                 <Label htmlFor="terms" className="text-sm">
-                  J'accepte les{" "}
-                  <Link href="/terms" className="text-amber-600 hover:underline">
-                    conditions d'utilisation
-                  </Link>{" "}
-                  et la{" "}
-                  <Link href="/privacy" className="text-amber-600 hover:underline">
-                    politique de confidentialité
+                  I accept the{" "}
+                  <Link href="/terms" className="text-primary hover:underline">
+                    terms and conditions
                   </Link>
                 </Label>
               </div>
 
-              <Button type="submit" className="w-full bg-amber-500 hover:bg-amber-600" disabled={isLoading}>
+              <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? (
                   <span className="flex items-center gap-2">
-                    <svg
-                      className="h-4 w-4 animate-spin"
-                      xmlns="http://www.w3.org/2000/svg"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path
-                        className="opacity-75"
-                        fill="currentColor"
-                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                      />
-                    </svg>
-                    Inscription en cours...
+                    <UserPlus className="h-4 w-4 animate-spin" />
+                    Signing up...
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
                     <UserPlus className="h-4 w-4" />
-                    S'inscrire
+                    Sign Up
                   </span>
                 )}
               </Button>
@@ -223,52 +262,19 @@ export default function RegisterPage() {
                   <Separator />
                 </div>
                 <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">Ou continuer avec</span>
+                  <span className="bg-background px-2 text-muted-foreground">Already have an account?</span>
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-4">
-                <Button variant="outline" className="w-full">
-                  <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
-                    <path
-                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                      fill="#4285F4"
-                    />
-                    <path
-                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                      fill="#34A853"
-                    />
-                    <path
-                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                      fill="#FBBC05"
-                    />
-                    <path
-                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                      fill="#EA4335"
-                    />
-                  </svg>
-                  Google
-                </Button>
-                <Button variant="outline" className="w-full">
-                  <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z" />
-                  </svg>
-                  Facebook
+              <div className="mt-4">
+                <Button variant="outline" className="w-full" asChild>
+                  <Link href={`/login?redirect=${encodeURIComponent(redirectUrl)}`}>
+                    Sign In
+                  </Link>
                 </Button>
               </div>
             </div>
           </CardContent>
-          <CardFooter className="flex justify-center">
-            <p className="text-center text-sm text-slate-600">
-              Vous avez déjà un compte?{" "}
-              <Link
-                href={`/login?redirect=${encodeURIComponent(redirectUrl)}`}
-                className="font-medium text-amber-600 hover:underline"
-              >
-                Se connecter
-              </Link>
-            </p>
-          </CardFooter>
         </Card>
       </div>
     </div>

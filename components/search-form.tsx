@@ -102,15 +102,19 @@ export function SearchForm() {
         <label htmlFor="date" className="text-sm font-medium">
           Date
         </label>
+        
         <Popover>
           <PopoverTrigger asChild>
+            
             <Button
               variant="outline"
               className={cn("w-full justify-start pl-10 text-left font-normal", !date && "text-muted-foreground")}
             >
-              <CalendarIcon className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <CalendarIcon className="relative top-0 h-4 w-4 text-slate-400" />
+              
               {date ? format(date, "PPP", { locale: fr }) : <span>Sélectionner une date</span>}
             </Button>
+            
           </PopoverTrigger>
           <PopoverContent className="w-auto p-0">
             <Calendar
