@@ -2,84 +2,154 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { useRouter, usePathname } from "next/navigation"
+import { getCurrentUser, signIn, signOut, getUserProfile } from "@/lib/appwrite/auth"
+import { calculateLoyaltyPoints } from "@/lib/appwrite/bookings"
+import type { User } from "@/lib/appwrite/types"
 
-type User = {
-  id: string
+type AuthUser = {
+  created_at: any
+  $id: string
   email: string
   name: string
-  role: "user" | "admin" | "vip"
+  emailVerification: boolean
+  profile?: User
+  loyaltyPoints?: number
+  phone?: string
+  role?: "client" | "admin"
+  profile_image?: string
 } | null
 
 type AuthContextType = {
-  user: User
+  user: AuthUser
   login: (email: string, password: string) => Promise<boolean>
-  logout: () => void
+  logout: () => Promise<void>
   isLoading: boolean
+  isAuthenticated: boolean
+  refreshProfile: () => Promise<void>
 }
 
-// Créer un contexte avec des valeurs par défaut sécurisées
 const AuthContext = createContext<AuthContextType>({
   user: null,
   login: async () => false,
-  logout: () => {},
+  logout: async () => {},
   isLoading: true,
+  isAuthenticated: false,
+  refreshProfile: async () => {},
 })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User>(null)
+  const [user, setUser] = useState<AuthUser>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
 
-  // Fonction de connexion
-  const login = async (email: string, password: string): Promise<boolean> => {
-    // Simuler une vérification d'identifiants
-    // Dans une application réelle, cela ferait un appel API
+  // Fonction pour récupérer le profil complet de l'utilisateur
+  const fetchUserProfile = async (currentUser: any) => {
+    try {
+      const profile = await getUserProfile(currentUser.$id)
+      const loyaltyPoints = await calculateLoyaltyPoints(currentUser.$id)
 
-    // Identifiants de test
-    const testUsers = [
-      { id: "1", email: "test@example.com", password: "password123", name: "Utilisateur Test", role: "user" as const },
-      { id: "2", email: "admin@example.com", password: "admin123", name: "Administrateur", role: "admin" as const },
-      { id: "3", email: "vip@example.com", password: "vip123", name: "Client VIP", role: "vip" as const },
-    ]
-
-    // Vérifier les identifiants
-    const foundUser = testUsers.find((user) => user.email === email && user.password === password)
-
-    if (foundUser) {
-      // Créer un objet utilisateur sans le mot de passe
-      const { password, ...userWithoutPassword } = foundUser
-
-      // Stocker l'utilisateur dans le localStorage
-      localStorage.setItem("user", JSON.stringify(userWithoutPassword))
-
-      // Mettre à jour l'état
-      setUser(userWithoutPassword)
-      return true
+      return {
+        $id: currentUser.$id,
+        email: currentUser.email,
+        name: currentUser.name,
+        emailVerification: currentUser.emailVerification,
+        profile: profile ?? undefined,
+        loyaltyPoints,
+        created_at: currentUser.created_at || new Date().toISOString(),
+        phone: profile?.phone || "",
+        role: profile?.role || "client",
+        profile_image: profile?.profile_image || "",
+      }
+    } catch (error) {
+      console.error("Erreur lors de la récupération du profil:", error)
+      return {
+        $id: currentUser.$id,
+        email: currentUser.email,
+        name: currentUser.name,
+        emailVerification: currentUser.emailVerification,
+        profile: undefined,
+        loyaltyPoints: 100,
+        created_at: currentUser.created_at || new Date().toISOString(),
+        phone: "",
+        role: "client" as "client",
+        profile_image: "",
+      }
     }
-
-    return false
   }
 
-  // Fonction de déconnexion
-  const logout = () => {
-    localStorage.removeItem("user")
-    setUser(null)
-    router.push("/")
+  // Fonction de connexion avec Appwrite
+  const login = async (email: string, password: string): Promise<boolean> => {
+    try {
+      setIsLoading(true)
+      await signIn({ email, password })
+
+      // Récupérer les informations de l'utilisateur après connexion
+      const currentUser = await getCurrentUser()
+
+      if (currentUser) {
+        const userWithProfile = await fetchUserProfile(currentUser)
+        setUser(userWithProfile)
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.error("Erreur de connexion:", error)
+      throw error
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Fonction de déconnexion avec Appwrite
+  const logout = async () => {
+    try {
+      await signOut()
+      setUser(null)
+      router.push("/")
+    } catch (error) {
+      console.error("Erreur de déconnexion:", error)
+      // Même en cas d'erreur, on déconnecte localement
+      setUser(null)
+      router.push("/")
+    }
+  }
+
+  // Fonction pour rafraîchir le profil utilisateur
+  const refreshProfile = async () => {
+    if (user) {
+      try {
+        const currentUser = await getCurrentUser()
+        if (currentUser) {
+          const userWithProfile = await fetchUserProfile(currentUser)
+          setUser(userWithProfile)
+        }
+      } catch (error) {
+        console.error("Erreur lors du rafraîchissement du profil:", error)
+      }
+    }
   }
 
   // Vérifier si l'utilisateur est connecté au chargement
   useEffect(() => {
-    const storedUser = localStorage.getItem("user")
-    if (storedUser) {
+    const checkUser = async () => {
       try {
-        setUser(JSON.parse(storedUser))
+        const currentUser = await getCurrentUser()
+
+        if (currentUser) {
+          const userWithProfile = await fetchUserProfile(currentUser)
+          setUser(userWithProfile)
+        }
       } catch (error) {
-        console.error("Erreur lors de la récupération des données utilisateur:", error)
-        localStorage.removeItem("user")
+        console.error("Erreur lors de la vérification de l'utilisateur:", error)
+        setUser(null)
+      } finally {
+        setIsLoading(false)
       }
     }
-    setIsLoading(false)
+
+    checkUser()
   }, [])
 
   // Rediriger vers la page de connexion si l'utilisateur n'est pas connecté
@@ -90,15 +160,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, isLoading, pathname, router])
 
-  return <AuthContext.Provider value={{ user, login, logout, isLoading }}>{children}</AuthContext.Provider>
+  const isAuthenticated = !!user
+
+  return (
+    <AuthContext.Provider value={{ user, login, logout, isLoading, isAuthenticated, refreshProfile }}>
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {
-  return useContext(AuthContext)
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider")
+  }
+  return context
 }
 
 // Fonction pour vérifier si une route est protégée
 function isProtectedRoute(pathname: string): boolean {
-  const protectedRoutes = ["/account", "/account/settings", "/booking", "/admin"]
+  const protectedRoutes = ["/account", "/booking", "/admin"]
   return protectedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`))
 }

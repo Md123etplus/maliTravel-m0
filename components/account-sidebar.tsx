@@ -3,8 +3,9 @@
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { User, Calendar, Star, Settings, LogOut } from "lucide-react"
+import { User, Calendar, Star, Settings, LogOut, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useAuth } from "./auth-provider"
 
 interface AccountSidebarProps {
   activeTab: string
@@ -13,23 +14,68 @@ interface AccountSidebarProps {
 
 export default function AccountSidebar({ activeTab, setActiveTab }: AccountSidebarProps) {
   const router = useRouter()
+  const { user, logout } = useAuth()
+  // If loading is needed, define it here or get it from another source
+  const loading = !user; // Example: treat as loading if user is not yet loaded
 
-  const handleLogout = () => {
-    // Simuler la déconnexion
-    setTimeout(() => {
+  const handleLogout = async () => {
+    try {
+      await logout()
       router.push("/")
-    }, 500)
+    } catch (error) {
+      console.error("Logout error:", error)
+      // Fallback: redirect anyway
+      router.push("/")
+    }
+  }
+
+  // Generate initials from user name
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((word) => word.charAt(0))
+      .join("")
+      .toUpperCase()
+      .slice(0, 2)
+  }
+
+  if (loading) {
+    return (
+      <Card className="p-4">
+        <div className="flex flex-col items-center mb-6">
+          <div className="h-20 w-20 mb-4 rounded-full bg-slate-200 animate-pulse" />
+          <div className="h-4 w-24 bg-slate-200 animate-pulse rounded mb-2" />
+          <div className="h-3 w-32 bg-slate-200 animate-pulse rounded" />
+        </div>
+        <div className="space-y-2">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="h-10 bg-slate-200 animate-pulse rounded" />
+          ))}
+        </div>
+      </Card>
+    )
+  }
+
+  if (!user) {
+    return (
+      <Card className="p-4">
+        <div className="flex flex-col items-center justify-center py-8">
+          <p className="text-slate-500 mb-4">Utilisateur non connecté</p>
+          <Button onClick={() => router.push("/login")}>Se connecter</Button>
+        </div>
+      </Card>
+    )
   }
 
   return (
     <Card className="p-4">
       <div className="flex flex-col items-center mb-6">
         <Avatar className="h-20 w-20 mb-4">
-          <AvatarImage src="/placeholder.svg?height=100&width=100" alt="Amadou Diallo" />
-          <AvatarFallback>AD</AvatarFallback>
+          <AvatarImage src={user.profile_image || "/placeholder.svg?height=100&width=100"} alt={user.name || "User"} />
+          <AvatarFallback className="text-lg font-semibold">{user.name ? getInitials(user.name) : "U"}</AvatarFallback>
         </Avatar>
-        <h2 className="text-lg font-semibold">Amadou Diallo</h2>
-        <p className="text-sm text-slate-500">amadou.diallo@example.com</p>
+        <h2 className="text-lg font-semibold text-center">{user.name || "Utilisateur"}</h2>
+        <p className="text-sm text-slate-500 text-center break-all">{user.email}</p>
       </div>
 
       <nav className="space-y-1">
@@ -68,8 +114,8 @@ export default function AccountSidebar({ activeTab, setActiveTab }: AccountSideb
       </nav>
 
       <div className="mt-6 pt-6 border-t">
-        <Button variant="outline" className="w-full justify-start" onClick={handleLogout}>
-          <LogOut className="mr-2 h-4 w-4" />
+        <Button variant="outline" className="w-full justify-start" onClick={handleLogout} disabled={loading}>
+          {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <LogOut className="mr-2 h-4 w-4" />}
           Déconnexion
         </Button>
       </div>

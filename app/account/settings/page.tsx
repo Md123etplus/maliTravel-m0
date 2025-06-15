@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge"
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -14,25 +14,89 @@ import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Save, User, Mail, Phone, Lock, Globe, CreditCard, Shield } from "lucide-react"
+import { Save, User, Mail, Phone, Lock, Globe, CreditCard, Shield, Loader2 } from "lucide-react"
 import AccountSidebar from "@/components/account-sidebar"
 import { useMobile } from "@/hooks/use-mobile"
+import { useAuth } from "@/components/auth-provider"
+import { useRouter } from "next/navigation"
+import { updateUserProfile } from "@/lib/appwrite/auth"
+import { getUserPayments } from "@/lib/appwrite/bookings"
+// import { useToast } from "@/hooks/use-toast"
+
+// Define the Payment type based on your data structure
+type Payment = {
+  $id?: string
+  booking?: {
+    trip?: {
+      route?: {
+        origin?: { name?: string }
+        destination?: { name?: string }
+      }
+    }
+  }
+  payment_date?: string
+  transaction_id?: string
+  amount?: number
+  status?: string
+}
 
 export default function SettingsPage() {
   const isMobile = useMobile()
+  const router = useRouter()
+  const { user } = useAuth()
+  // const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("profile")
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [payments, setPayments] = useState<Payment[]>([])
   const [formData, setFormData] = useState({
-    firstName: "Amadou",
-    lastName: "Diallo",
-    email: "amadou.diallo@example.com",
-    phone: "+223 70 12 34 56",
+    name: "",
+    email: "",
+    phone: "",
     language: "fr",
     currency: "xof",
     emailNotifications: true,
     smsNotifications: true,
     marketingEmails: false,
   })
+
+  // Redirect if not authenticated
+  useEffect(() => {
+    if (user === undefined) return; // Wait for user to be defined (could be null or object)
+    if (!user) {
+      router.push("/login")
+    }
+  }, [user, router])
+
+  // Load user data when user is available
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        name: user.name || "",
+        email: user.email || "",
+        phone: user.phone || "",
+        language: "fr",
+        currency: "xof",
+        emailNotifications: true,
+        smsNotifications: true,
+        marketingEmails: false,
+      })
+
+      // Load user payments
+      loadUserPayments()
+    }
+  }, [user])
+
+  const loadUserPayments = async () => {
+    if (user?.$id) {
+      try {
+        const userPayments = await getUserPayments(user.$id)
+        setPayments(userPayments)
+      } catch (error) {
+        console.error("Erreur lors du chargement des paiements:", error)
+      }
+    }
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -47,13 +111,44 @@ export default function SettingsPage() {
     setFormData((prev) => ({ ...prev, [name]: value }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // Simuler la sauvegarde
-    setTimeout(() => {
+    if (!user) return
+
+    setIsLoading(true)
+    try {
+      await updateUserProfile(user.$id, {
+        name: formData.name,
+        phone: formData.phone,
+      })
+
       setSaveSuccess(true)
+      // toast({
+      //   title: "Profil mis à jour",
+      //   description: "Vos informations ont été enregistrées avec succès.",
+      // })
       setTimeout(() => setSaveSuccess(false), 3000)
-    }, 1000)
+    } catch (error) {
+      console.error("Erreur lors de la sauvegarde:", error)
+      // toast({
+      //   title: "Erreur",
+      //   description: "Impossible de sauvegarder vos modifications.",
+      //   variant: "destructive",
+      // })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+  // Show loading while authenticating
+  if (user === undefined) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
+  if (!user) {
+    return null;
   }
 
   return (
@@ -105,8 +200,17 @@ export default function SettingsPage() {
                     <div className="mb-6 flex flex-col items-center sm:flex-row sm:items-start gap-6">
                       <div className="flex flex-col items-center">
                         <Avatar className="h-24 w-24">
-                          <AvatarImage src="/placeholder.svg?height=100&width=100" alt="Amadou Diallo" />
-                          <AvatarFallback>AD</AvatarFallback>
+                          <AvatarImage
+                            src={user.profile_image || "/placeholder.svg?height=100&width=100"}
+                            alt={user.name}
+                          />
+                          <AvatarFallback>
+                            {user.name
+                              .split(" ")
+                              .map((n) => n[0])
+                              .join("")
+                              .toUpperCase()}
+                          </AvatarFallback>
                         </Avatar>
                         <Button variant="outline" size="sm" className="mt-4">
                           Changer la photo
@@ -115,44 +219,32 @@ export default function SettingsPage() {
                       <div className="flex-1 space-y-4">
                         <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
-                            <Label htmlFor="firstName">Prénom</Label>
+                            <Label htmlFor="name">Nom complet</Label>
                             <div className="relative">
                               <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                               <Input
-                                id="firstName"
-                                name="firstName"
+                                id="name"
+                                name="name"
                                 className="pl-10"
-                                value={formData.firstName}
+                                value={formData.name}
                                 onChange={handleChange}
                               />
                             </div>
                           </div>
                           <div className="space-y-2">
-                            <Label htmlFor="lastName">Nom</Label>
+                            <Label htmlFor="lastName">Email</Label>
                             <div className="relative">
-                              <User className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+                              <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
                               <Input
-                                id="lastName"
-                                name="lastName"
+                                id="email"
+                                name="email"
+                                type="email"
                                 className="pl-10"
-                                value={formData.lastName}
+                                value={formData.email}
                                 onChange={handleChange}
+                                disabled
                               />
                             </div>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <Label htmlFor="email">Email</Label>
-                          <div className="relative">
-                            <Mail className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                            <Input
-                              id="email"
-                              name="email"
-                              type="email"
-                              className="pl-10"
-                              value={formData.email}
-                              onChange={handleChange}
-                            />
                           </div>
                         </div>
                         <div className="space-y-2">
@@ -171,9 +263,13 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <div className="flex justify-end">
-                      <Button type="submit" className="bg-amber-500 hover:bg-amber-600">
-                        <Save className="mr-2 h-4 w-4" />
-                        Enregistrer les modifications
+                      <Button type="submit" className="bg-amber-500 hover:bg-amber-600" disabled={isLoading}>
+                        {isLoading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Save className="mr-2 h-4 w-4" />
+                        )}
+                        {isLoading ? "Enregistrement..." : "Enregistrer les modifications"}
                       </Button>
                     </div>
                   </form>
@@ -526,60 +622,49 @@ export default function SettingsPage() {
                   <h3 className="text-lg font-medium">Historique des transactions</h3>
                   <p className="text-sm text-slate-500 mb-4">Vos transactions récentes</p>
                   <div className="space-y-4">
-                    {[
-                      {
-                        id: "T12345",
-                        description: "Réservation Bamako - Ségou",
-                        date: "15 mai 2023",
-                        amount: "24000 FCFA",
-                        status: "success",
-                      },
-                      {
-                        id: "T12346",
-                        description: "Réservation Ségou - Bamako",
-                        date: "15 mai 2023",
-                        amount: "12000 FCFA",
-                        status: "success",
-                      },
-                      {
-                        id: "T12347",
-                        description: "Remboursement partiel",
-                        date: "10 avril 2023",
-                        amount: "-8000 FCFA",
-                        status: "refund",
-                      },
-                    ].map((transaction, index) => (
-                      <div key={index} className="flex items-center justify-between rounded-md border p-4">
-                        <div>
-                          <div className="font-medium">{transaction.description}</div>
-                          <div className="mt-1 text-sm text-slate-500">
-                            {transaction.date} • #{transaction.id}
+                    {payments.length > 0 ? (
+                      payments.map((payment, index) => (
+                        <div
+                          key={payment.$id || index}
+                          className="flex items-center justify-between rounded-md border p-4"
+                        >
+                          <div>
+                            <div className="font-medium">
+                              {payment.booking?.trip?.route?.origin?.name} -{" "}
+                              {payment.booking?.trip?.route?.destination?.name}
+                            </div>
+                            <div className="mt-1 text-sm text-slate-500">
+                              {payment.payment_date
+                                ? new Date(payment.payment_date).toLocaleDateString("fr-FR")
+                                : "Date inconnue"}{" "}
+                              • #{payment.transaction_id || payment.$id}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-medium text-slate-900">{payment.amount?.toLocaleString()} FCFA</div>
+                            <div className="mt-1">
+                              <Badge
+                                className={
+                                  payment.status === "completed"
+                                    ? "bg-green-100 text-green-800"
+                                    : payment.status === "refunded"
+                                      ? "bg-blue-100 text-blue-800"
+                                      : "bg-yellow-100 text-yellow-800"
+                                }
+                              >
+                                {payment.status === "completed"
+                                  ? "Réussi"
+                                  : payment.status === "refunded"
+                                    ? "Remboursé"
+                                    : "En attente"}
+                              </Badge>
+                            </div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div
-                            className={
-                              transaction.status === "refund"
-                                ? "font-medium text-green-600"
-                                : "font-medium text-slate-900"
-                            }
-                          >
-                            {transaction.amount}
-                          </div>
-                          <div className="mt-1">
-                            <Badge
-                              className={
-                                transaction.status === "success"
-                                  ? "bg-green-100 text-green-800"
-                                  : "bg-blue-100 text-blue-800"
-                              }
-                            >
-                              {transaction.status === "success" ? "Réussi" : "Remboursement"}
-                            </Badge>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-slate-500">Aucune transaction trouvée</div>
+                    )}
                   </div>
                   <div className="mt-4 text-center">
                     <Button variant="link" className="text-amber-500">

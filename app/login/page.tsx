@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -10,17 +10,21 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
 import { Client, Account } from "appwrite"
+// import { useToast } from "@/components/use-toast"
 
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect") || "/account"
+  const registrationSuccess = searchParams.get("registration_success")
+  // const { toast } = useToast()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
-  const [success, setSuccess] = useState("")
+  const [success, setSuccess] = useState(registrationSuccess ? "Registration successful! Please login." : "")
 
   // Initialize Appwrite client
   const client = new Client()
@@ -29,17 +33,31 @@ export default function LoginPage() {
 
   const account = new Account(client)
 
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const session = await account.getSession("current")
+        if (session) {
+          router.push(redirect)
+        }
+      } catch (error) {
+        // No active session, continue with login page
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    checkSession()
+  }, [router, redirect])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError("")
-    setSuccess("")
-    setIsLoading(true)
+    setIsSubmitting(true)
 
     try {
-      // Create session with email and password
-      const session = await account.createSession(email, password)
-      
-      // Get user details
+      // Use createEmailPasswordSession as in your working example
+      await account.createEmailPasswordSession(email, password)
       const user = await account.get()
 
       // Store user data in localStorage
@@ -53,23 +71,39 @@ export default function LoginPage() {
         })
       )
 
+      // Set cookies as in your working example
+      document.cookie = `session=${user.$id}; path=/; max-age=86400; secure; samesite=strict`
+      document.cookie = `user=${encodeURIComponent(JSON.stringify(user))}; path=/; max-age=86400; secure; samesite=strict`
+
+      // toast({
+      //   title: "Login successful",
+      //   description: "Welcome back!",
+      // })
+
       setSuccess("Login successful! Redirecting...")
-      setTimeout(() => {
-        router.push(redirect)
-      }, 1000)
+      setTimeout(() => router.push(redirect), 1000)
+
     } catch (err: any) {
       console.error("Login error:", err)
       
       if (err.type === 'user_invalid_credentials') {
         setError("Invalid email or password")
-      } else if (err.message.includes('rate limit')) {
-        setError("Too many attempts. Please try again later.")
+      } else if (err.code === 401) {
+        setError("Authentication failed. Please check your credentials.")
       } else {
-        setError("An error occurred. Please try again.")
+        setError(err.message || "Login failed. Please try again.")
       }
     } finally {
-      setIsLoading(false)
+      setIsSubmitting(false)
     }
+  }
+
+  if (isLoading) {
+    return (
+      <div className="container mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
   }
 
   return (
@@ -122,8 +156,8 @@ export default function LoginPage() {
                 minLength={8}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
+            <Button type="submit" className="w-full" disabled={isSubmitting}>
+              {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Logging in...

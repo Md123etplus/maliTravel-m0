@@ -1,5 +1,7 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,7 +12,7 @@ import { Separator } from "@/components/ui/separator"
 import { UserPlus, Mail, Lock, User, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Client, Account } from "appwrite"
+import { Client, Account, Databases, ID } from "appwrite"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -33,6 +35,7 @@ export default function RegisterPage() {
     .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "")
 
   const account = new Account(client)
+  const databases = new Databases(client)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -44,19 +47,21 @@ export default function RegisterPage() {
 
   const generateValidUserId = (email: string): string => {
     // Generate ID from email prefix + timestamp
-    const prefix = email.split('@')[0]
+    const prefix = email
+      .split("@")[0]
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, '_') // Replace special chars
-      .replace(/^[^a-z]/, 'u')    // Ensure starts with letter
-      .slice(0, 20)               // Limit length
-    
+      .replace(/[^a-z0-9]/g, "_") // Replace special chars
+      .replace(/^[^a-z]/, "u") // Ensure starts with letter
+      .slice(0, 20) // Limit length
+
     const timestamp = Date.now().toString(36).slice(-6)
     const userId = `${prefix}_${timestamp}`.slice(0, 36)
-    
+
     // Final validation
-    return userId.replace(/[^a-z0-9_]/g, '_')
-                 .replace(/^_/, 'u')
-                 .replace(/_$/, '0')
+    return userId
+      .replace(/[^a-z0-9_]/g, "_")
+      .replace(/^_/, "u")
+      .replace(/_$/, "0")
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -92,25 +97,38 @@ export default function RegisterPage() {
     setIsLoading(true)
 
     try {
-      // Generate valid user ID
-      const userId = generateValidUserId(formData.email)
-      console.log("Generated User ID:", userId)
+      // 1. Create user account in Auth
+      const response = await account.create(ID.unique(), formData.email, formData.password, formData.fullName)
 
-      // Create user account
-      const response = await account.create(
-        userId,
-        formData.email,
-        formData.password,
-        formData.fullName
-      )
+      console.log("User created successfully:", response)
 
-      // Create session using createSession (not createEmailSession)
-      const session = await account.createSession(
-        formData.email,
-        formData.password
-      )
+      // 2. Create user document in database
+      try {
+        await databases.createDocument(
+          process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || "6849f32c0004d098ab7e",
+          process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_USERS || "6849f34c0038fcad73c9",
+          response.$id, // Use the same ID as the Auth user
+          {
+            $id: generateValidUserId(response.email),
+            name: formData.fullName,
+            email: formData.email,
+            phone: "",
+            role: "client",
+            created_at: new Date().toISOString(),
+            profile_image: "",
+            
+          },
+        )
+        console.log("User profile created in database")
+      } catch (dbError) {
+        console.error("Error creating user profile:", dbError)
+        // Continue even if database creation fails
+      }
 
-      // Store user data
+      // 3. Create session and redirect
+      await account.createSession(formData.email, formData.password)
+
+      // 4. Store user data
       localStorage.setItem(
         "user",
         JSON.stringify({
@@ -118,20 +136,18 @@ export default function RegisterPage() {
           email: response.email,
           name: response.name,
           isLoggedIn: true,
-        })
+        }),
       )
 
-      // Redirect after successful registration
+      // 5. Redirect to account page
       router.push(redirectUrl)
     } catch (err: any) {
       console.error("Registration error:", err)
-      
-      if (err.type === 'user_already_exists') {
+
+      if (err.type === "user_already_exists") {
         setError("An account with this email already exists")
-      } else if (err.message.includes('Invalid credentials')) {
+      } else if (err.message.includes("credentials")) {
         setError("Invalid email or password format")
-      } else if (err.message.includes('userId')) {
-        setError("System error during registration. Please try again.")
       } else {
         setError("Registration failed. Please try again.")
       }
@@ -228,11 +244,7 @@ export default function RegisterPage() {
               </div>
 
               <div className="flex items-center space-x-2">
-                <Checkbox 
-                  id="terms" 
-                  checked={acceptTerms} 
-                  onCheckedChange={(checked) => setAcceptTerms(!!checked)} 
-                />
+                <Checkbox id="terms" checked={acceptTerms} onCheckedChange={(checked) => setAcceptTerms(!!checked)} />
                 <Label htmlFor="terms" className="text-sm">
                   I accept the{" "}
                   <Link href="/terms" className="text-primary hover:underline">
@@ -268,9 +280,7 @@ export default function RegisterPage() {
 
               <div className="mt-4">
                 <Button variant="outline" className="w-full" asChild>
-                  <Link href={`/login?redirect=${encodeURIComponent(redirectUrl)}`}>
-                    Sign In
-                  </Link>
+                  <Link href={`/login?redirect=${encodeURIComponent(redirectUrl)}`}>Sign In</Link>
                 </Button>
               </div>
             </div>
