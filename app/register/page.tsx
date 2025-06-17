@@ -13,12 +13,14 @@ import { UserPlus, Mail, Lock, User, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Client, Account, Databases, ID } from "appwrite"
+import { useAuth } from "@/components/auth-provider"
 
 export default function RegisterPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectUrl = searchParams?.get("redirect") || "/account"
-
+  const { login } = useAuth()
+  
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -45,24 +47,24 @@ export default function RegisterPage() {
     }))
   }
 
-  const generateValidUserId = (email: string): string => {
-    // Generate ID from email prefix + timestamp
-    const prefix = email
-      .split("@")[0]
-      .toLowerCase()
-      .replace(/[^a-z0-9]/g, "_") // Replace special chars
-      .replace(/^[^a-z]/, "u") // Ensure starts with letter
-      .slice(0, 20) // Limit length
+  // const generateValidUserId = (email: string): string => {
+  //   // Generate ID from email prefix + timestamp
+  //   const prefix = email
+  //     .split("@")[0]
+  //     .toLowerCase()
+  //     .replace(/[^a-z0-9]/g, "_") // Replace special chars
+  //     .replace(/^[^a-z]/, "u") // Ensure starts with letter
+  //     .slice(0, 20) // Limit length
 
-    const timestamp = Date.now().toString(36).slice(-6)
-    const userId = `${prefix}_${timestamp}`.slice(0, 36)
+  //   const timestamp = Date.now().toString(36).slice(-6)
+  //   const userId = `${prefix}_${timestamp}`.slice(0, 36)
 
-    // Final validation
-    return userId
-      .replace(/[^a-z0-9_]/g, "_")
-      .replace(/^_/, "u")
-      .replace(/_$/, "0")
-  }
+  //   // Final validation
+  //   return userId
+  //     .replace(/[^a-z0-9_]/g, "_")
+  //     .replace(/^_/, "u")
+  //     .replace(/_$/, "0")
+  // }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -98,24 +100,26 @@ export default function RegisterPage() {
 
     try {
       // 1. Create user account in Auth
-      const response = await account.create(ID.unique(), formData.email, formData.password, formData.fullName)
+      const userId = ID.unique(); 
+      const response = await account.create(userId, formData.email, formData.password, formData.fullName)
 
       console.log("User created successfully:", response)
+      console.log("userId:", userId)
 
       // 2. Create user document in database
       try {
         await databases.createDocument(
           process.env.NEXT_PUBLIC_APPWRITE_DATABASE_ID || "6849f32c0004d098ab7e",
           process.env.NEXT_PUBLIC_APPWRITE_COLLECTION_USERS || "6849f34c0038fcad73c9",
-          response.$id, // Use the same ID as the Auth user
+          userId, // Use the same ID as the Auth user
           {
-            $id: generateValidUserId(response.email),
+            id: userId,
             name: formData.fullName,
             email: formData.email,
             phone: "",
             role: "client",
             created_at: new Date().toISOString(),
-            profile_image: "",
+            profile_image: null,
             
           },
         )
@@ -126,21 +130,14 @@ export default function RegisterPage() {
       }
 
       // 3. Create session and redirect
-      await account.createSession(formData.email, formData.password)
-
-      // 4. Store user data
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          id: response.$id,
-          email: response.email,
-          name: response.name,
-          isLoggedIn: true,
-        }),
-      )
-
-      // 5. Redirect to account page
-      router.push(redirectUrl)
+      const loginSuccess = await login(formData.email, formData.password)
+      
+      if (loginSuccess) {
+        // Redirect after successful login
+        router.push(redirectUrl)
+      } else {
+        setError("Registration successful but login failed. Please try logging in manually.")
+      }
     } catch (err: any) {
       console.error("Registration error:", err)
 

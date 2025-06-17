@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -9,46 +9,20 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, AlertCircle, CheckCircle2 } from "lucide-react"
-import { Client, Account } from "appwrite"
-// import { useToast } from "@/components/use-toast"
+import { useAuth } from "@/components/auth-provider"
 
 export default function LoginPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirect = searchParams.get("redirect") || "/account"
   const registrationSuccess = searchParams.get("registration_success")
-  // const { toast } = useToast()
+  const { login, isLoading: authLoading } = useAuth()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(true)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(registrationSuccess ? "Registration successful! Please login." : "")
-
-  // Initialize Appwrite client
-  const client = new Client()
-    .setEndpoint(process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "")
-    .setProject(process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "")
-
-  const account = new Account(client)
-
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        const session = await account.getSession("current")
-        if (session) {
-          router.push(redirect)
-        }
-      } catch (error) {
-        // No active session, continue with login page
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    checkSession()
-  }, [router, redirect])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -56,33 +30,11 @@ export default function LoginPage() {
     setIsSubmitting(true)
 
     try {
-      // Use createEmailPasswordSession as in your working example
-      await account.createEmailPasswordSession(email, password)
-      const user = await account.get()
-
-      // Store user data in localStorage
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          id: user.$id,
-          email: user.email,
-          name: user.name,
-          isLoggedIn: true,
-        })
-      )
-
-      // Set cookies as in your working example
-      document.cookie = `session=${user.$id}; path=/; max-age=86400; secure; samesite=strict`
-      document.cookie = `user=${encodeURIComponent(JSON.stringify(user))}; path=/; max-age=86400; secure; samesite=strict`
-
-      // toast({
-      //   title: "Login successful",
-      //   description: "Welcome back!",
-      // })
-
-      setSuccess("Login successful! Redirecting...")
-      setTimeout(() => router.push(redirect), 1000)
-
+      const success = await login(email, password)
+      if (success) {
+        setSuccess("Login successful! Redirecting...")
+        setTimeout(() => router.push(redirect), 1000)
+      }
     } catch (err: any) {
       console.error("Login error:", err)
       
@@ -98,7 +50,7 @@ export default function LoginPage() {
     }
   }
 
-  if (isLoading) {
+  if (authLoading) {
     return (
       <div className="container mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
         <Loader2 className="h-8 w-8 animate-spin" />
@@ -156,7 +108,7 @@ export default function LoginPage() {
                 minLength={8}
               />
             </div>
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            <Button type="submit" className="w-full" disabled={isSubmitting || authLoading}>
               {isSubmitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

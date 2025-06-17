@@ -43,7 +43,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
 
-  // Fonction pour récupérer le profil complet de l'utilisateur
   const fetchUserProfile = async (currentUser: any) => {
     try {
       const profile = await getUserProfile(currentUser.$id)
@@ -62,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         profile_image: profile?.profile_image || "",
       }
     } catch (error) {
-      console.error("Erreur lors de la récupération du profil:", error)
+      console.error("Error fetching user profile:", error)
       return {
         $id: currentUser.$id,
         email: currentUser.email,
@@ -72,51 +71,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loyaltyPoints: 100,
         created_at: currentUser.created_at || new Date().toISOString(),
         phone: "",
-        role: "client" as "client",
+        role: "client" as const,
         profile_image: "",
       }
     }
   }
 
-  // Fonction de connexion avec Appwrite
+  const loadUser = async () => {
+    try {
+      const currentUser = await getCurrentUser()
+      if (currentUser) {
+        const userWithProfile = await fetchUserProfile(currentUser)
+        setUser(userWithProfile)
+        return userWithProfile
+      } else {
+        setUser(null)
+        localStorage.removeItem("user")
+        return null
+      }
+    } catch (error) {
+      console.error("Error loading user:", error)
+      setUser(null)
+      localStorage.removeItem("user")
+      return null
+    }
+  }
+
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
       setIsLoading(true)
       await signIn({ email, password })
-
-      // Récupérer les informations de l'utilisateur après connexion
-      const currentUser = await getCurrentUser()
-
-      if (currentUser) {
-        const userWithProfile = await fetchUserProfile(currentUser)
-        setUser(userWithProfile)
-        return true
-      }
-
-      return false
+      const userData = await loadUser()
+      return !!userData
     } catch (error) {
-      console.error("Erreur de connexion:", error)
+      console.error("Login error:", error)
+      setUser(null)
       throw error
     } finally {
       setIsLoading(false)
     }
   }
 
-  // Fonction de déconnexion avec Appwrite
   const logout = async () => {
     try {
+      setIsLoading(true)
       await signOut()
       setUser(null)
       router.push("/")
     } catch (error) {
-      console.error("Erreur de déconnexion:", error)
-      // Même en cas d'erreur, on déconnecte localement
+      console.error("Logout error:", error)
       setUser(null)
+      localStorage.removeItem("user")
       router.push("/")
+    } finally {
+      setIsLoading(false)
     }
   }
 
-  // Fonction pour rafraîchir le profil utilisateur
   const refreshProfile = async () => {
     if (user) {
       try {
@@ -126,44 +137,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(userWithProfile)
         }
       } catch (error) {
-        console.error("Erreur lors du rafraîchissement du profil:", error)
+        console.error("Error refreshing profile:", error)
       }
     }
   }
 
-  // Vérifier si l'utilisateur est connecté au chargement
   useEffect(() => {
-    const checkUser = async () => {
+    const initializeAuth = async () => {
       try {
-        const currentUser = await getCurrentUser()
-
-        if (currentUser) {
-          const userWithProfile = await fetchUserProfile(currentUser)
-          setUser(userWithProfile)
-        }
+        await loadUser()
       } catch (error) {
-        console.error("Erreur lors de la vérification de l'utilisateur:", error)
-        setUser(null)
+        console.error("Auth initialization error:", error)
       } finally {
         setIsLoading(false)
       }
     }
 
-    checkUser()
+    initializeAuth()
   }, [])
 
-  // Rediriger vers la page de connexion si l'utilisateur n'est pas connecté
-  // et qu'il essaie d'accéder à une page protégée
   useEffect(() => {
-    if (!isLoading && !user && isProtectedRoute(pathname)) {
-      router.push(`/login?redirect=${encodeURIComponent(pathname)}`)
+    if (!isLoading) {
+      if (!user && isProtectedRoute(pathname)) {
+        router.push(`/login?redirect=${encodeURIComponent(pathname)}`)
+      }
     }
   }, [user, isLoading, pathname, router])
 
-  const isAuthenticated = !!user
+  const isAuthenticated = !!user && !isLoading
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isLoading, isAuthenticated, refreshProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        login,
+        logout,
+        isLoading,
+        isAuthenticated,
+        refreshProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
@@ -177,7 +190,6 @@ export function useAuth() {
   return context
 }
 
-// Fonction pour vérifier si une route est protégée
 function isProtectedRoute(pathname: string): boolean {
   const protectedRoutes = ["/account", "/booking", "/admin"]
   return protectedRoutes.some((route) => pathname === route || pathname.startsWith(`${route}/`))

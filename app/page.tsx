@@ -193,7 +193,7 @@ export default function HomePage() {
       </section>
 
       {/* Testimonials Section */}
-      <section className="container mx-auto px-4 py-16">
+      {/* <section className="container mx-auto px-4 py-16">
         <div className="mb-12 text-center">
           <h2 className="mb-4 text-3xl font-bold">Ce que disent nos clients</h2>
           <p className="mx-auto max-w-2xl text-slate-600">
@@ -202,10 +202,10 @@ export default function HomePage() {
         </div>
 
         <Testimonials />
-      </section>
+      </section> */}
 
       {/* App Promotion Section */}
-      <section className="bg-slate-900 py-16 text-white">
+      {/* <section className="bg-slate-900 py-16 text-white">
         <div className="container mx-auto px-4">
           <div className="grid items-center gap-8 md:grid-cols-2">
             <div>
@@ -267,7 +267,7 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-      </section>
+      </section> */}
 
       {/* Newsletter Section */}
       <section className="container mx-auto px-4 py-16">

@@ -13,14 +13,11 @@ export interface SignInData {
   password: string
 }
 
-// Créer un compte utilisateur
 export async function signUp({ email, password, name, phone }: SignUpData) {
   try {
-    // Créer le compte dans Appwrite Auth
     const newAccount = await account.create(ID.unique(), email, password, name)
 
     if (newAccount) {
-      // Créer le profil utilisateur dans la base de données
       await databases.createDocument(DATABASE_ID, COLLECTION_USERS, newAccount.$id, {
         name,
         email,
@@ -29,37 +26,54 @@ export async function signUp({ email, password, name, phone }: SignUpData) {
         created_at: new Date().toISOString(),
       })
 
-      // Connecter automatiquement l'utilisateur
       await signIn({ email, password })
       return newAccount
     }
   } catch (error) {
-    console.error("Erreur lors de l'inscription:", error)
+    console.error("Signup error:", error)
     throw error
   }
 }
 
-// Connexion utilisateur
 export async function signIn({ email, password }: SignInData) {
   try {
-    return await account.createSession(email, password)
+    const session = await account.createEmailPasswordSession(email, password)
+    const user = await account.get()
+
+    localStorage.setItem(
+      "user",
+      JSON.stringify({
+        id: user.$id,
+        email: user.email,
+        name: user.name,
+        isLoggedIn: true,
+      }),
+    )
+
+    document.cookie = `session=${user.$id}; path=/; max-age=86400; secure; samesite=strict`
+    document.cookie = `user=${encodeURIComponent(JSON.stringify(user))}; path=/; max-age=86400; secure; samesite=strict`
+
+    return session
   } catch (error) {
-    console.error("Erreur lors de la connexion:", error)
+    localStorage.removeItem("user")
+    document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    document.cookie = "user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
     throw error
   }
 }
 
-// Déconnexion
 export async function signOut() {
   try {
+    localStorage.removeItem("user")
+    document.cookie = "session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
+    document.cookie = "user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT"
     return await account.deleteSession("current")
   } catch (error) {
-    console.error("Erreur lors de la déconnexion:", error)
+    console.error("Logout error:", error)
     throw error
   }
 }
 
-// Récupérer l'utilisateur actuel
 export async function getCurrentUser() {
   try {
     return await account.get()
@@ -68,43 +82,39 @@ export async function getCurrentUser() {
   }
 }
 
-// Récupérer le profil utilisateur complet
 export async function getUserProfile(userId: string): Promise<User | null> {
   try {
     const profile = await databases.getDocument(DATABASE_ID, COLLECTION_USERS, userId)
     return profile as unknown as User
   } catch (error) {
-    console.error("Erreur lors de la récupération du profil:", error)
+    console.error("Error getting user profile:", error)
     return null
   }
 }
 
-// Mettre à jour le profil utilisateur
 export async function updateUserProfile(userId: string, data: Partial<User>) {
   try {
     return await databases.updateDocument(DATABASE_ID, COLLECTION_USERS, userId, data)
   } catch (error) {
-    console.error("Erreur lors de la mise à jour du profil:", error)
+    console.error("Error updating profile:", error)
     throw error
   }
 }
 
-// Récupération de mot de passe
 export async function sendPasswordRecovery(email: string) {
   try {
     return await account.createRecovery(email, `${window.location.origin}/reset-password`)
   } catch (error) {
-    console.error("Erreur lors de l'envoi de récupération:", error)
+    console.error("Error sending recovery:", error)
     throw error
   }
 }
 
-// Réinitialisation de mot de passe
 export async function resetPassword(userId: string, secret: string, password: string) {
   try {
     return await account.updateRecovery(userId, secret, password)
   } catch (error) {
-    console.error("Erreur lors de la réinitialisation:", error)
+    console.error("Error resetting password:", error)
     throw error
   }
 }
