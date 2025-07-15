@@ -1,8 +1,8 @@
 import { Client, Account, Databases, Storage, ID } from "appwrite"
 
 // Configuration Appwrite
-const APPWRITE_ENDPOINT = process.env.NEXT_PUBLIC_APPWRITE_ENDPOINT || "https://fra.cloud.appwrite.io/v1"
-const APPWRITE_PROJECT_ID = process.env.NEXT_PUBLIC_APPWRITE_PROJECT_ID || "6849f24b0034e830d918"
+const APPWRITE_ENDPOINT = "https://fra.cloud.appwrite.io/v1"
+const APPWRITE_PROJECT_ID = "6849f24b0034e830d918"
 
 // Database et Collections IDs (selon votre structure)
 export const DATABASE_ID = "6849f32c0004d098ab7e"

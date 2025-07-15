@@ -146,43 +146,37 @@ export default function AboutPage() {
       <div className="mb-16">
         <h2 className="mb-8 text-center text-3xl font-bold">Notre Équipe de Direction</h2>
         <div className="grid gap-6 md:grid-cols-4">
-          {[
+            {[
             {
-              name: "Amadou Keita",
+              name: "Moussa DEMBELE",
               role: "Directeur Général",
-              bio: "Plus de 20 ans d'expérience dans le secteur du transport. Visionnaire et leader charismatique.",
-              image: "/placeholder.svg?height=300&width=300",
+              bio: "Fondateur de Mali Voyages, Moussa dirige l'entreprise avec passion et une vision tournée vers l'innovation et la qualité.",
+              image: "/team/moussa-dembele.jpg",
             },
             {
-              name: "Fatoumata Diallo",
-              role: "Directrice des Opérations",
-              bio: "Experte en logistique et gestion de flotte. A rejoint l'entreprise en 2012.",
-              image: "/placeholder.svg?height=300&width=300",
+              name: "Ramses Kodio",
+              role: "Directeur Général",
+              bio: "Expert en logistique, Ramses veille à la ponctualité et à la sécurité sur toutes les lignes de Mali Voyages.",
+              image: "/team/ramses-kodio.jpg",
             },
             {
-              name: "Ibrahim Touré",
-              role: "Directeur Commercial",
-              bio: "Spécialiste du marketing et de la relation client avec une approche innovante.",
-              image: "/placeholder.svg?height=300&width=300",
-            },
-            {
-              name: "Mariam Sissoko",
-              role: "Directrice Financière",
-              bio: "Expertise en gestion financière et stratégie de croissance durable.",
-              image: "/placeholder.svg?height=300&width=300",
-            },
-          ].map((member, index) => (
+              name: "Salimata Coumare",
+              role: "Directeur Général",
+              bio: "Salimata développe la notoriété de Mali Voyages et place la satisfaction client au cœur de la stratégie.",
+              image: "/team/salimata-coumare.jpg",
+            }
+            ].map((member, index) => (
             <Card key={index}>
               <div className="relative h-64 w-full">
-                <Image src={member.image || "/placeholder.svg"} alt={member.name} fill className="object-cover" />
+              <Image src={member.image || "/placeholder.svg"} alt={member.name} fill className="object-cover" />
               </div>
               <CardContent className="p-4">
-                <h3 className="text-lg font-semibold">{member.name}</h3>
-                <p className="mb-2 text-sm text-amber-600">{member.role}</p>
-                <p className="text-sm text-slate-600">{member.bio}</p>
+              <h3 className="text-lg font-semibold">{member.name}</h3>
+              <p className="mb-2 text-sm text-amber-600">{member.role}</p>
+              <p className="text-sm text-slate-600">{member.bio}</p>
               </CardContent>
             </Card>
-          ))}
+            ))}
         </div>
       </div>
 
