@@ -1,115 +1,167 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, use } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { SeatSelector } from "@/components/seat-selector"
-import { TripDetails } from "@/components/trip-details"
-import { BookingSummary } from "@/components/booking-summary"
-import { useToast } from "@/components/ui/use-toast"
-import { useAuth } from "@/components/auth-provider"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { CreditCard, Smartphone, AlertCircle } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { ArrowLeft, CreditCard, Smartphone } from "lucide-react"
+import Link from "next/link"
+import { useAuth } from "@/components/auth-provider"
+import { useToast } from "@/components/ui/use-toast"
+import { SeatSelector } from "@/components/seat-selector"
+import { TripDetails } from "@/components/trip-details"
+import { BookingSummary } from "@/components/booking-summary"
+import { getTrips, getRoutes, getVehicles, getDestinations } from "@/lib/appwrite/admin"
+import type { Models } from "appwrite"
 
-// Types pour les données du voyage
 interface Trip {
-  id: string
-  from: string
-  to: string
-  departureDate: string
-  departureTime: string
-  arrivalDate: string
-  arrivalTime: string
+  $id: string
+  route_id: string
+  vehicle_id: string
+  departure_time: string
+  arrival_time: string
   price: number
-  vehicleType: string
+  available_seats: number
+  status: string
+}
+
+interface Route {
+  $id: string
+  origin_id: string
+  destination_id: string
+  distance: number
+  estimated_duration: number
+}
+
+interface Destination {
+  $id: string
+  name: string
+  city: string
+  region: string
+}
+
+interface Vehicle {
+  $id: string
+  type: string
+  capacity: number
   company: string
-  availableSeats: number
 }
 
-// Types pour les données du passager
-interface PassengerInfo {
-  fullName: string
-  email: string
-  phone: string
-  idNumber: string
-}
-
-// Types pour les données de paiement
-interface PaymentInfo {
-  method: "card" | "orange" | "moov" | "wave"
-  cardNumber?: string
-  cardHolder?: string
-  expiryDate?: string
-  cvv?: string
-  mobileNumber?: string
-}
-
-export default function BookingPage({ params }: { params: { id: string } }) {
-  const { user, isLoading: authIsLoading } = useAuth()
+export default function BookingPage({ params }: { params: Promise<{ id: string }> }) {
+  const resolvedParams = use(params)
   const router = useRouter()
+  const { user } = useAuth()
   const { toast } = useToast()
-  const [activeTab, setActiveTab] = useState("seats")
+
+  // State management
+  const [trip, setTrip] = useState<Trip | null>(null)
+  const [route, setRoute] = useState<Route | null>(null)
+  const [originDestination, setOriginDestination] = useState<Destination | null>(null)
+  const [destinationDestination, setDestinationDestination] = useState<Destination | null>(null)
+  const [vehicle, setVehicle] = useState<Vehicle | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [selectedSeats, setSelectedSeats] = useState<number[]>([])
-  const [passengerInfo, setPassengerInfo] = useState<PassengerInfo>({
-    fullName: "",
+  const [isProcessing, setIsProcessing] = useState(false)
+
+  // Form data
+  const [formData, setFormData] = useState({
+    name: "",
     email: "",
     phone: "",
     idNumber: "",
+    paymentMethod: "orange",
   })
-  const [paymentInfo, setPaymentInfo] = useState<PaymentInfo>({
-    method: "card",
-    cardNumber: "",
-    cardHolder: "",
-    expiryDate: "",
-    cvv: "",
-    mobileNumber: "",
-  })
-  const [trip, setTrip] = useState<Trip | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [processingPayment, setProcessingPayment] = useState(false)
 
-  // Vérifier si l'utilisateur est connecté
+  // Load trip data
   useEffect(() => {
-    if (!authIsLoading && !user) {
-      // Rediriger vers la page de connexion si l'utilisateur n'est pas connecté
-      router.push(`/login?redirect=/booking/${params.id}`)
-    }
-  }, [user, authIsLoading, router, params.id])
-
-  // Simuler le chargement des données du voyage
-  useEffect(() => {
-    const fetchTrip = async () => {
+    const loadTripData = async () => {
       try {
-        // Simuler un appel API
-        await new Promise((resolve) => setTimeout(resolve, 1000))
+        setIsLoading(true)
 
-        // Données fictives du voyage
+        const [tripsData, routesData, vehiclesData, destinationsData] = await Promise.all([
+          getTrips(),
+          getRoutes(),
+          getVehicles(),
+          getDestinations(),
+        ])
+
+        // Find the specific trip and cast to our interface
+        const tripDocument = tripsData.find((t: Models.Document) => t.$id === resolvedParams.id)
+        if (!tripDocument) {
+          throw new Error("Voyage non trouvé")
+        }
+
         const tripData: Trip = {
-          id: params.id,
-          from: "Bamako",
-          to: "Ségou",
-          departureDate: "2023-07-15",
-          departureTime: "08:00",
-          arrivalDate: "2023-07-15",
-          arrivalTime: "12:30",
-          price: 15000,
-          vehicleType: "Bus",
-          company: "Mali Travel Express",
-          availableSeats: 40,
+          $id: tripDocument.$id,
+          route_id: tripDocument.route_id as string,
+          vehicle_id: tripDocument.vehicle_id as string,
+          departure_time: tripDocument.departure_time as string,
+          arrival_time: tripDocument.arrival_time as string,
+          price: tripDocument.price as number,
+          available_seats: tripDocument.available_seats as number,
+          status: tripDocument.status as string,
         }
 
         setTrip(tripData)
+
+        // Find associated route and cast to our interface
+        const routeDocument = routesData.find((r: Models.Document) => r.$id === tripData.route_id)
+        if (routeDocument) {
+          const routeData: Route = {
+            $id: routeDocument.$id,
+            origin_id: routeDocument.origin_id as string,
+            destination_id: routeDocument.destination_id as string,
+            distance: routeDocument.distance as number,
+            estimated_duration: routeDocument.estimated_duration as number,
+          }
+
+          setRoute(routeData)
+
+          // Find destinations and cast to our interface
+          const originDocument = destinationsData.find((d: Models.Document) => d.$id === routeData.origin_id)
+          const destDocument = destinationsData.find((d: Models.Document) => d.$id === routeData.destination_id)
+
+          if (originDocument) {
+            const originDest: Destination = {
+              $id: originDocument.$id,
+              name: originDocument.name as string,
+              city: originDocument.city as string,
+              region: originDocument.region as string,
+            }
+            setOriginDestination(originDest)
+          }
+
+          if (destDocument) {
+            const destDest: Destination = {
+              $id: destDocument.$id,
+              name: destDocument.name as string,
+              city: destDocument.city as string,
+              region: destDocument.region as string,
+            }
+            setDestinationDestination(destDest)
+          }
+        }
+
+        // Find vehicle and cast to our interface
+        const vehicleDocument = vehiclesData.find((v: Models.Document) => v.$id === tripData.vehicle_id)
+        if (vehicleDocument) {
+          const vehicleData: Vehicle = {
+            $id: vehicleDocument.$id,
+            type: vehicleDocument.type as string,
+            capacity: vehicleDocument.capacity as number,
+            company: vehicleDocument.company as string,
+          }
+          setVehicle(vehicleData)
+        }
       } catch (error) {
-        console.error("Erreur lors du chargement des données du voyage:", error)
+        console.error("Erreur lors du chargement des données:", error)
         toast({
           title: "Erreur",
-          description: "Impossible de charger les détails du voyage. Veuillez réessayer.",
+          description: "Impossible de charger les détails du voyage.",
           variant: "destructive",
         })
       } finally {
@@ -117,167 +169,100 @@ export default function BookingPage({ params }: { params: { id: string } }) {
       }
     }
 
-    fetchTrip()
-  }, [params.id, toast])
+    loadTripData()
+  }, [resolvedParams.id, toast])
 
-  // Pré-remplir les informations du passager si l'utilisateur est connecté
-  useEffect(() => {
-    if (user) {
-      setPassengerInfo((prev) => ({
-        ...prev,
-        fullName: user.name || "",
-        email: user.email || "",
-      }))
-    }
-  }, [user])
-
-  // Pré-remplir le numéro de téléphone mobile pour les paiements mobiles
-  useEffect(() => {
-    if (passengerInfo.phone) {
-      setPaymentInfo((prev) => ({
-        ...prev,
-        mobileNumber: passengerInfo.phone,
-      }))
-    }
-  }, [passengerInfo.phone])
-
-  const handleSeatSelection = (seatNumber: number) => {
-    setSelectedSeats((prev) => {
-      if (prev.includes(seatNumber)) {
-        return prev.filter((seat) => seat !== seatNumber)
-      } else {
-        return [...prev, seatNumber]
-      }
-    })
-  }
-
-  const handlePassengerInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setPassengerInfo((prev) => ({
+  // Handle form input changes
+  const handleInputChange = (field: string, value: string) => {
+    setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [field]: value,
     }))
   }
 
-  const handlePaymentMethodChange = (value: string) => {
-    setPaymentInfo((prev) => ({
-      ...prev,
-      method: value as "card" | "orange" | "moov" | "wave",
-    }))
+  // Handle seat selection
+  const handleSeatSelection = (seats: number[]) => {
+    setSelectedSeats(seats)
   }
 
-  const handlePaymentInfoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setPaymentInfo((prev) => ({
-      ...prev,
-      [name]: value,
-    }))
-  }
-
-  const validatePaymentInfo = () => {
-    const { method } = paymentInfo
-
-    if (method === "card") {
-      const { cardNumber, cardHolder, expiryDate, cvv } = paymentInfo
-      if (!cardNumber || !cardHolder || !expiryDate || !cvv) {
-        toast({
-          title: "Informations de paiement incomplètes",
-          description: "Veuillez remplir toutes les informations de la carte bancaire.",
-          variant: "destructive",
-        })
-        return false
-      }
-    } else if (["orange", "moov", "wave"].includes(method)) {
-      const { mobileNumber } = paymentInfo
-      if (!mobileNumber) {
-        toast({
-          title: "Numéro de téléphone requis",
-          description: "Veuillez entrer votre numéro de téléphone mobile pour le paiement.",
-          variant: "destructive",
-        })
-        return false
-      }
-    }
-
-    return true
-  }
-
-  const handleContinue = () => {
-    if (activeTab === "seats") {
-      if (selectedSeats.length === 0) {
-        toast({
-          title: "Sélection de siège requise",
-          description: "Veuillez sélectionner au moins un siège pour continuer.",
-          variant: "destructive",
-        })
-        return
-      }
-      setActiveTab("passenger")
-    } else if (activeTab === "passenger") {
-      // Vérifier que toutes les informations du passager sont remplies
-      const { fullName, email, phone, idNumber } = passengerInfo
-      if (!fullName || !email || !phone || !idNumber) {
-        toast({
-          title: "Informations incomplètes",
-          description: "Veuillez remplir toutes les informations du passager pour continuer.",
-          variant: "destructive",
-        })
-        return
-      }
-      setActiveTab("payment")
-    } else if (activeTab === "payment") {
-      // Vérifier que toutes les informations de paiement sont remplies
-      if (!validatePaymentInfo()) {
-        return
-      }
-
-      // Simuler le traitement du paiement
-      setProcessingPayment(true)
+  // Handle payment confirmation
+  const handleConfirmPayment = async () => {
+    // Validation
+    if (!user) {
       toast({
-        title: "Traitement du paiement",
-        description: "Veuillez patienter pendant que nous traitons votre paiement...",
+        title: "Connexion requise",
+        description: "Veuillez vous connecter pour effectuer une réservation.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (selectedSeats.length === 0) {
+      toast({
+        title: "Sélection de siège requise",
+        description: "Veuillez sélectionner au moins un siège.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.name.trim() || !formData.email.trim() || !formData.phone.trim()) {
+      toast({
+        title: "Informations manquantes",
+        description: "Veuillez remplir tous les champs obligatoires.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setIsProcessing(true)
+
+      // Simulate payment processing
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+
+      // Build confirmation URL with all parameters
+      const params = new URLSearchParams({
+        seats: selectedSeats.join(","),
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        phone: formData.phone.trim(),
+        idNumber: formData.idNumber.trim(),
+        method: formData.paymentMethod,
       })
 
-      // Simuler un délai de traitement
-      setTimeout(() => {
-        setProcessingPayment(false)
-
-        // Simuler une confirmation de paiement mobile si nécessaire
-        if (paymentInfo.method !== "card") {
-          toast({
-            title: "Confirmation requise",
-            description: `Veuillez confirmer le paiement sur votre téléphone mobile. Un code a été envoyé au ${paymentInfo.mobileNumber}.`,
-          })
-
-          // Simuler une confirmation après quelques secondes
-          setTimeout(() => {
-            router.push(
-              `/booking/${params.id}/confirmation?seats=${selectedSeats.join(",")}&name=${encodeURIComponent(
-                passengerInfo.fullName,
-              )}&method=${paymentInfo.method}`,
-            )
-          }, 3000)
-        } else {
-          // Redirection directe pour le paiement par carte
-          router.push(
-            `/booking/${params.id}/confirmation?seats=${selectedSeats.join(",")}&name=${encodeURIComponent(
-              passengerInfo.fullName,
-            )}&method=${paymentInfo.method}`,
-          )
-        }
-      }, 2000)
+      // Redirect to confirmation page
+      router.push(`/booking/${resolvedParams.id}/confirmation?${params.toString()}`)
+    } catch (error) {
+      console.error("Erreur lors du paiement:", error)
+      toast({
+        title: "Erreur de paiement",
+        description: "Une erreur est survenue lors du traitement du paiement.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsProcessing(false)
     }
   }
 
-  const handleBack = () => {
-    if (activeTab === "passenger") {
-      setActiveTab("seats")
-    } else if (activeTab === "payment") {
-      setActiveTab("passenger")
+  // Get payment method info
+  const getPaymentMethodInfo = () => {
+    switch (formData.paymentMethod) {
+      case "orange":
+        return { icon: Smartphone, color: "text-orange-600", name: "Orange Money" }
+      case "moov":
+        return { icon: Smartphone, color: "text-blue-600", name: "Moov Money" }
+      case "wave":
+        return { icon: Smartphone, color: "text-teal-600", name: "Wave" }
+      default:
+        return { icon: CreditCard, color: "text-slate-600", name: "Carte bancaire" }
     }
   }
 
-  if (isLoading || !trip) {
+  const paymentInfo = getPaymentMethodInfo()
+  const PaymentIcon = paymentInfo.icon
+
+  if (isLoading) {
     return (
       <div className="container mx-auto flex min-h-[calc(100vh-4rem)] items-center justify-center px-4 py-8">
         <div className="flex flex-col items-center">
@@ -288,334 +273,198 @@ export default function BookingPage({ params }: { params: { id: string } }) {
     )
   }
 
+  if (!trip || !originDestination || !destinationDestination) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600">Voyage non trouvé</h1>
+          <p className="mt-2 text-slate-600">Le voyage que vous recherchez n'existe pas ou n'est plus disponible.</p>
+          <Link href="/search" className="mt-4 inline-block">
+            <Button>Rechercher d'autres voyages</Button>
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold md:text-3xl">Réservation de billet</h1>
+      <div className="mb-8">
+        <Link href="/search" className="inline-flex items-center text-amber-500 hover:text-amber-600">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Retour à la recherche
+        </Link>
+      </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <div className="md:col-span-2">
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-            <TabsList className="mb-4 grid w-full grid-cols-3">
-              <TabsTrigger value="seats">Sièges</TabsTrigger>
-              <TabsTrigger value="passenger">Passager</TabsTrigger>
-              <TabsTrigger value="payment">Paiement</TabsTrigger>
-            </TabsList>
+      <div className="grid gap-8 lg:grid-cols-3">
+        {/* Left Column - Trip Details & Seat Selection */}
+        <div className="lg:col-span-2 space-y-6">
+          {/* Trip Details */}
+          <TripDetails
+            from={originDestination.city}
+            to={destinationDestination.city}
+            departureDateTime={trip.departure_time}
+            arrivalDateTime={trip.arrival_time}
+            price={trip.price}
+            availableSeats={trip.available_seats}
+            vehicleType={vehicle?.type || "Bus"}
+            company={vehicle?.company || "Mali Travel Express"}
+          />
 
-            <Card>
-              <CardContent className="p-6">
-                <TabsContent value="seats" className="mt-0">
-                  <div className="space-y-6">
-                    <h2 className="text-xl font-semibold">Sélectionnez vos sièges</h2>
-                    <SeatSelector
-                      selectedSeats={selectedSeats}
-                      onSeatSelect={handleSeatSelection}
-                      totalSeats={trip.availableSeats}
-                      bookedSeats={[3, 7, 12, 15, 22, 28, 33]}
-                    />
-                  </div>
-                </TabsContent>
+          {/* Seat Selection */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Sélection des sièges</CardTitle>
+              <CardDescription>Choisissez vos sièges préférés</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SeatSelector
+                tripId={trip.$id}
+                maxSeats={4}
+                onSeatSelection={handleSeatSelection}
+                selectedSeats={selectedSeats}
+              />
+            </CardContent>
+          </Card>
 
-                <TabsContent value="passenger" className="mt-0">
-                  <div className="space-y-6">
-                    <h2 className="text-xl font-semibold">Informations du passager</h2>
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="fullName">Nom complet</Label>
-                        <Input
-                          id="fullName"
-                          name="fullName"
-                          value={passengerInfo.fullName}
-                          onChange={handlePassengerInfoChange}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="email">Email</Label>
-                        <Input
-                          id="email"
-                          name="email"
-                          type="email"
-                          value={passengerInfo.email}
-                          onChange={handlePassengerInfoChange}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="phone">Téléphone</Label>
-                        <Input
-                          id="phone"
-                          name="phone"
-                          type="tel"
-                          value={passengerInfo.phone}
-                          onChange={handlePassengerInfoChange}
-                          required
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="idNumber">Numéro de pièce d'identité</Label>
-                        <Input
-                          id="idNumber"
-                          name="idNumber"
-                          value={passengerInfo.idNumber}
-                          onChange={handlePassengerInfoChange}
-                          required
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="payment" className="mt-0">
-                  <div className="space-y-6">
-                    <h2 className="text-xl font-semibold">Méthode de paiement</h2>
-
-                    <RadioGroup
-                      value={paymentInfo.method}
-                      onValueChange={handlePaymentMethodChange}
-                      className="grid gap-4 md:grid-cols-2"
-                    >
-                      <div className="flex items-center space-x-2 rounded-md border p-4 hover:bg-slate-50">
-                        <RadioGroupItem value="card" id="payment-card" />
-                        <Label htmlFor="payment-card" className="flex items-center">
-                          <CreditCard className="mr-2 h-5 w-5 text-slate-600" />
-                          Carte bancaire
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2 rounded-md border p-4 hover:bg-orange-50">
-                        <RadioGroupItem value="orange" id="payment-orange" />
-                        <Label htmlFor="payment-orange" className="flex items-center">
-                          <Smartphone className="mr-2 h-5 w-5 text-orange-600" />
-                          Orange Money
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2 rounded-md border p-4 hover:bg-blue-50">
-                        <RadioGroupItem value="moov" id="payment-moov" />
-                        <Label htmlFor="payment-moov" className="flex items-center">
-                          <Smartphone className="mr-2 h-5 w-5 text-blue-600" />
-                          Moov Money
-                        </Label>
-                      </div>
-
-                      <div className="flex items-center space-x-2 rounded-md border p-4 hover:bg-teal-50">
-                        <RadioGroupItem value="wave" id="payment-wave" />
-                        <Label htmlFor="payment-wave" className="flex items-center">
-                          <Smartphone className="mr-2 h-5 w-5 text-teal-600" />
-                          Wave
-                        </Label>
-                      </div>
-                    </RadioGroup>
-
-                    {/* Formulaire de paiement par carte bancaire */}
-                    {paymentInfo.method === "card" && (
-                      <div className="mt-6 space-y-4 rounded-md border border-slate-200 bg-slate-50 p-4">
-                        <h3 className="font-medium">Informations de carte bancaire</h3>
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2 md:col-span-2">
-                            <Label htmlFor="cardNumber">Numéro de carte</Label>
-                            <Input
-                              id="cardNumber"
-                              name="cardNumber"
-                              value={paymentInfo.cardNumber}
-                              onChange={handlePaymentInfoChange}
-                              placeholder="1234 5678 9012 3456"
-                              required
-                            />
-                          </div>
-                          <div className="space-y-2 md:col-span-2">
-                            <Label htmlFor="cardHolder">Titulaire de la carte</Label>
-                            <Input
-                              id="cardHolder"
-                              name="cardHolder"
-                              value={paymentInfo.cardHolder}
-                              onChange={handlePaymentInfoChange}
-                              required
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="expiryDate">Date d'expiration</Label>
-                            <Input
-                              id="expiryDate"
-                              name="expiryDate"
-                              value={paymentInfo.expiryDate}
-                              onChange={handlePaymentInfoChange}
-                              placeholder="MM/AA"
-                              required
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <Label htmlFor="cvv">CVV</Label>
-                            <Input
-                              id="cvv"
-                              name="cvv"
-                              value={paymentInfo.cvv}
-                              onChange={handlePaymentInfoChange}
-                              placeholder="123"
-                              required
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Formulaire de paiement mobile (Orange Money) */}
-                    {paymentInfo.method === "orange" && (
-                      <div className="mt-6 space-y-4 rounded-md border border-orange-200 bg-orange-50 p-4">
-                        <div className="flex items-start">
-                          <div className="mr-3 flex h-10 w-10 items-center justify-center rounded-full bg-orange-100">
-                            <Smartphone className="h-5 w-5 text-orange-600" />
-                          </div>
-                          <div>
-                            <h3 className="font-medium text-orange-800">Paiement par Orange Money</h3>
-                            <p className="mt-1 text-sm text-orange-700">
-                              Vous recevrez un message sur votre téléphone pour confirmer le paiement.
-                            </p>
-                            <div className="mt-3 space-y-3">
-                              <div className="space-y-2">
-                                <Label htmlFor="mobileNumber" className="text-orange-800">
-                                  Numéro Orange Money
-                                </Label>
-                                <Input
-                                  id="mobileNumber"
-                                  name="mobileNumber"
-                                  value={paymentInfo.mobileNumber}
-                                  onChange={handlePaymentInfoChange}
-                                  placeholder="+223 XX XX XX XX"
-                                  className="border-orange-200 bg-white"
-                                  required
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Formulaire de paiement mobile (Moov Money) */}
-                    {paymentInfo.method === "moov" && (
-                      <div className="mt-6 space-y-4 rounded-md border border-blue-200 bg-blue-50 p-4">
-                        <div className="flex items-start">
-                          <div className="mr-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-                            <Smartphone className="h-5 w-5 text-blue-600" />
-                          </div>
-                          <div>
-                            <h3 className="font-medium text-blue-800">Paiement par Moov Money</h3>
-                            <p className="mt-1 text-sm text-blue-700">
-                              Vous recevrez un message sur votre téléphone pour confirmer le paiement.
-                            </p>
-                            <div className="mt-3 space-y-3">
-                              <div className="space-y-2">
-                                <Label htmlFor="mobileNumber" className="text-blue-800">
-                                  Numéro Moov Money
-                                </Label>
-                                <Input
-                                  id="mobileNumber"
-                                  name="mobileNumber"
-                                  value={paymentInfo.mobileNumber}
-                                  onChange={handlePaymentInfoChange}
-                                  placeholder="+223 XX XX XX XX"
-                                  className="border-blue-200 bg-white"
-                                  required
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Formulaire de paiement mobile (Wave) */}
-                    {paymentInfo.method === "wave" && (
-                      <div className="mt-6 space-y-4 rounded-md border border-teal-200 bg-teal-50 p-4">
-                        <div className="flex items-start">
-                          <div className="mr-3 flex h-10 w-10 items-center justify-center rounded-full bg-teal-100">
-                            <Smartphone className="h-5 w-5 text-teal-600" />
-                          </div>
-                          <div>
-                            <h3 className="font-medium text-teal-800">Paiement par Wave</h3>
-                            <p className="mt-1 text-sm text-teal-700">
-                              Vous recevrez un message sur votre téléphone pour confirmer le paiement.
-                            </p>
-                            <div className="mt-3 space-y-3">
-                              <div className="space-y-2">
-                                <Label htmlFor="mobileNumber" className="text-teal-800">
-                                  Numéro Wave
-                                </Label>
-                                <Input
-                                  id="mobileNumber"
-                                  name="mobileNumber"
-                                  value={paymentInfo.mobileNumber}
-                                  onChange={handlePaymentInfoChange}
-                                  placeholder="+223 XX XX XX XX"
-                                  className="border-teal-200 bg-white"
-                                  required
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Informations de sécurité */}
-                    <div className="mt-4 rounded-md bg-amber-50 p-4">
-                      <div className="flex items-start">
-                        <AlertCircle className="mr-2 h-5 w-5 text-amber-500" />
-                        <div>
-                          <h3 className="font-medium text-amber-800">Paiement sécurisé</h3>
-                          <p className="mt-1 text-sm text-amber-700">
-                            Toutes vos informations de paiement sont cryptées et sécurisées. Nous ne stockons pas vos
-                            données de carte bancaire.
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <div className="mt-6 flex justify-between">
-                  {activeTab !== "seats" && (
-                    <Button variant="outline" onClick={handleBack} disabled={processingPayment}>
-                      Retour
-                    </Button>
-                  )}
-                  <Button
-                    className="ml-auto bg-amber-500 hover:bg-amber-600"
-                    onClick={handleContinue}
-                    disabled={processingPayment}
-                  >
-                    {processingPayment ? (
-                      <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                        Traitement en cours...
-                      </>
-                    ) : activeTab === "payment" ? (
-                      "Confirmer et payer"
-                    ) : (
-                      "Continuer"
-                    )}
-                  </Button>
+          {/* Passenger Information */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Informations du passager</CardTitle>
+              <CardDescription>Veuillez remplir vos informations personnelles</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="name">Nom complet *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange("name", e.target.value)}
+                    placeholder="Votre nom complet"
+                    required
+                  />
                 </div>
-              </CardContent>
-            </Card>
-          </Tabs>
+                <div>
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => handleInputChange("email", e.target.value)}
+                    placeholder="votre@email.com"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <Label htmlFor="phone">Téléphone *</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => handleInputChange("phone", e.target.value)}
+                    placeholder="+223 XX XX XX XX"
+                    required
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="idNumber">Numéro de pièce d'identité</Label>
+                  <Input
+                    id="idNumber"
+                    value={formData.idNumber}
+                    onChange={(e) => handleInputChange("idNumber", e.target.value)}
+                    placeholder="Numéro CNI/Passeport"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Payment Method */}
+          <Card>
+            <CardHeader>
+              <CardTitle>Méthode de paiement</CardTitle>
+              <CardDescription>Choisissez votre mode de paiement préféré</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <RadioGroup
+                value={formData.paymentMethod}
+                onValueChange={(value) => handleInputChange("paymentMethod", value)}
+                className="grid gap-4 sm:grid-cols-2"
+              >
+                <div className="flex items-center space-x-2 rounded-lg border p-4">
+                  <RadioGroupItem value="orange" id="orange" />
+                  <Label htmlFor="orange" className="flex items-center space-x-2 cursor-pointer">
+                    <Smartphone className="h-5 w-5 text-orange-600" />
+                    <span>Orange Money</span>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 rounded-lg border p-4">
+                  <RadioGroupItem value="moov" id="moov" />
+                  <Label htmlFor="moov" className="flex items-center space-x-2 cursor-pointer">
+                    <Smartphone className="h-5 w-5 text-blue-600" />
+                    <span>Moov Money</span>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 rounded-lg border p-4">
+                  <RadioGroupItem value="wave" id="wave" />
+                  <Label htmlFor="wave" className="flex items-center space-x-2 cursor-pointer">
+                    <Smartphone className="h-5 w-5 text-teal-600" />
+                    <span>Wave</span>
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 rounded-lg border p-4">
+                  <RadioGroupItem value="card" id="card" />
+                  <Label htmlFor="card" className="flex items-center space-x-2 cursor-pointer">
+                    <CreditCard className="h-5 w-5 text-slate-600" />
+                    <span>Carte bancaire</span>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </CardContent>
+          </Card>
         </div>
 
-        <div>
-          <div className="sticky top-4 space-y-6">
-            <TripDetails
-              from={trip.from}
-              to={trip.to}
-              departureDate={trip.departureDate}
-              departureTime={trip.departureTime}
-              arrivalDate={trip.arrivalDate}
-              arrivalTime={trip.arrivalTime}
-              vehicleType={trip.vehicleType}
-              company={trip.company}
+        {/* Right Column - Booking Summary */}
+        <div className="lg:col-span-1">
+          <div className="sticky top-8">
+            <BookingSummary
+              from={originDestination.city}
+              to={destinationDestination.city}
+              date={trip.departure_time.split("T")[0]}
+              time={trip.departure_time.split("T")[1]?.substring(0, 5) || "N/A"}
+              seats={selectedSeats}
+              pricePerSeat={trip.price}
+              serviceFee={1500}
+              paymentMethod={paymentInfo.name}
             />
 
-            <BookingSummary basePrice={trip.price} selectedSeats={selectedSeats} serviceFee={1500} />
+            <Separator className="my-6" />
+
+            <Button
+              onClick={handleConfirmPayment}
+              disabled={selectedSeats.length === 0 || isProcessing || !formData.name.trim() || !formData.email.trim()}
+              className="w-full bg-amber-500 hover:bg-amber-600"
+              size="lg"
+            >
+              {isProcessing ? (
+                <>
+                  <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                  Traitement en cours...
+                </>
+              ) : (
+                <>
+                  <PaymentIcon className={`mr-2 h-4 w-4 ${paymentInfo.color}`} />
+                  Confirmer le paiement
+                </>
+              )}
+            </Button>
+
+            <p className="mt-4 text-center text-sm text-slate-600">
+              En confirmant, vous acceptez nos conditions d'utilisation et notre politique de confidentialité.
+            </p>
           </div>
         </div>
       </div>

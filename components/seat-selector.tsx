@@ -1,131 +1,211 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Info } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+import { databases, DATABASE_ID, COLLECTION_BOOKINGS, COLLECTION_BOOKING_SEATS } from "@/lib/appwrite/config"
+import { Query } from "appwrite"
+import { cn } from "@/lib/utils"
 
 interface SeatSelectorProps {
-  totalSeats: number
-  availableSeats: number
-  selectedSeats: string[]
-  onSeatSelect: (seatId: string) => void
+  tripId: string
+  maxSeats?: number
+  onSeatSelection: (seats: number[]) => void
+  selectedSeats: number[]
 }
 
-export function SeatSelector({ totalSeats, availableSeats, selectedSeats, onSeatSelect }: SeatSelectorProps) {
-  // Générer un tableau de sièges disponibles et occupés
-  const generateSeats = () => {
-    const seats = []
-    const occupiedSeats = []
+export function SeatSelector({ tripId, maxSeats = 4, onSeatSelection, selectedSeats }: SeatSelectorProps) {
+  const [occupiedSeats, setOccupiedSeats] = useState<number[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const { toast } = useToast()
 
-    // Simuler des sièges occupés aléatoires
-    while (occupiedSeats.length < totalSeats - availableSeats) {
-      const randomSeat = Math.floor(Math.random() * totalSeats) + 1
-      if (!occupiedSeats.includes(randomSeat.toString())) {
-        occupiedSeats.push(randomSeat.toString())
+  // Load occupied seats from database
+  useEffect(() => {
+    const loadOccupiedSeats = async () => {
+      try {
+        setIsLoading(true)
+
+        // Get all confirmed bookings for this trip
+        const bookingsResponse = await databases.listDocuments(DATABASE_ID, COLLECTION_BOOKINGS, [
+          Query.equal("trip_id", tripId),
+          Query.equal("status", "confirmé"),
+        ])
+
+        const bookingIds = bookingsResponse.documents.map((booking) => booking.$id)
+
+        if (bookingIds.length > 0) {
+          // Get all seat bookings for these bookings
+          const seatBookingsResponse = await databases.listDocuments(DATABASE_ID, COLLECTION_BOOKING_SEATS, [
+            Query.equal("booking_id", bookingIds),
+          ])
+
+          // Extract seat numbers from seat_id (format: "seat_1", "seat_2", etc.)
+          const occupied = seatBookingsResponse.documents
+            .map((seatBooking) => {
+              const seatId = seatBooking.seat_id as string
+              const seatNumber = Number.parseInt(seatId.replace("seat_", ""))
+              return isNaN(seatNumber) ? null : seatNumber
+            })
+            .filter((seat): seat is number => seat !== null)
+
+          setOccupiedSeats(occupied)
+        }
+      } catch (error) {
+        console.error("Erreur lors du chargement des sièges occupés:", error)
+        // Fallback to some default occupied seats if database query fails
+        setOccupiedSeats([5, 12, 18, 23, 31, 44])
+        toast({
+          title: "Avertissement",
+          description: "Impossible de charger l'état des sièges. Certains sièges peuvent ne pas être à jour.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoading(false)
       }
     }
 
-    for (let i = 1; i <= totalSeats; i++) {
-      const seatId = i.toString()
-      const isOccupied = occupiedSeats.includes(seatId)
-      const isSelected = selectedSeats.includes(seatId)
+    loadOccupiedSeats()
+  }, [tripId, toast])
 
-      seats.push({
-        id: seatId,
-        status: isOccupied ? "occupied" : isSelected ? "selected" : "available",
-      })
+  const handleSeatClick = (seatNumber: number) => {
+    if (occupiedSeats.includes(seatNumber)) return
+
+    let newSelectedSeats: number[]
+
+    if (selectedSeats.includes(seatNumber)) {
+      // Deselect seat
+      newSelectedSeats = selectedSeats.filter((seat) => seat !== seatNumber)
+    } else {
+      // Select seat (check max limit)
+      if (selectedSeats.length >= maxSeats) {
+        toast({
+          title: "Limite atteinte",
+          description: `Vous ne pouvez sélectionner que ${maxSeats} siège(s) maximum.`,
+          variant: "destructive",
+        })
+        return
+      }
+      newSelectedSeats = [...selectedSeats, seatNumber].sort((a, b) => a - b)
     }
 
+    onSeatSelection(newSelectedSeats)
+  }
+
+  const getSeatStatus = (seatNumber: number) => {
+    if (occupiedSeats.includes(seatNumber)) return "occupied"
+    if (selectedSeats.includes(seatNumber)) return "selected"
+    return "available"
+  }
+
+  const getSeatColor = (status: string) => {
+    switch (status) {
+      case "occupied":
+        return "bg-red-500 text-white cursor-not-allowed"
+      case "selected":
+        return "bg-amber-500 text-white cursor-pointer hover:bg-amber-600"
+      case "available":
+      default:
+        return "bg-gray-200 text-gray-700 cursor-pointer hover:bg-gray-300"
+    }
+  }
+
+  // Generate seat layout (4 seats per row, 12 rows = 48 seats total)
+  const generateSeats = () => {
+    const seats = []
+    for (let row = 0; row < 12; row++) {
+      const rowSeats = []
+      for (let col = 0; col < 4; col++) {
+        const seatNumber = row * 4 + col + 1
+        const status = getSeatStatus(seatNumber)
+
+        rowSeats.push(
+          <Button
+            key={seatNumber}
+            variant="outline"
+            size="sm"
+            className={cn("h-10 w-10 p-0 text-xs", getSeatColor(status))}
+            onClick={() => handleSeatClick(seatNumber)}
+            disabled={status === "occupied" || isLoading}
+          >
+            {seatNumber}
+          </Button>,
+        )
+
+        // Add aisle space after 2nd seat
+        if (col === 1) {
+          rowSeats.push(<div key={`aisle-${row}`} className="w-4" />)
+        }
+      }
+
+      seats.push(
+        <div key={row} className="flex items-center justify-center gap-2">
+          {rowSeats}
+        </div>,
+      )
+    }
     return seats
   }
 
-  const [seats] = useState(generateSeats)
+  const availableSeatsCount = 48 - occupiedSeats.length
 
-  // Fonction pour obtenir la classe CSS en fonction du statut du siège
-  const getSeatClass = (status: string) => {
-    switch (status) {
-      case "available":
-        return "bg-white border-slate-200 hover:border-amber-500 hover:bg-amber-50"
-      case "selected":
-        return "bg-amber-500 border-amber-500 text-white"
-      case "occupied":
-        return "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
-      default:
-        return "bg-white border-slate-200"
-    }
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="flex flex-col items-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-amber-500 border-t-transparent"></div>
+          <p className="mt-2 text-sm text-gray-600">Chargement des sièges...</p>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
-        <div className="text-sm font-medium">Sélectionnez vos sièges</div>
+    <div className="space-y-6">
+      {/* Legend */}
+      <div className="flex flex-wrap items-center justify-center gap-4 text-sm">
         <div className="flex items-center gap-2">
-          <Badge variant="outline" className="bg-white">
-            {availableSeats} sièges disponibles
-          </Badge>
-          <Badge variant="outline" className="bg-amber-500 text-white">
-            {selectedSeats.length} sélectionnés
-          </Badge>
+          <div className="h-4 w-4 rounded bg-gray-200"></div>
+          <span>Disponible</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-4 w-4 rounded bg-amber-500"></div>
+          <span>Sélectionné</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="h-4 w-4 rounded bg-red-500"></div>
+          <span>Occupé</span>
         </div>
       </div>
 
-      <div className="mb-6 flex items-center justify-center gap-4">
-        <div className="flex items-center">
-          <div className="mr-2 h-4 w-4 rounded-sm border border-slate-200 bg-white"></div>
-          <span className="text-xs">Disponible</span>
-        </div>
-        <div className="flex items-center">
-          <div className="mr-2 h-4 w-4 rounded-sm border border-amber-500 bg-amber-500"></div>
-          <span className="text-xs">Sélectionné</span>
-        </div>
-        <div className="flex items-center">
-          <div className="mr-2 h-4 w-4 rounded-sm border border-slate-200 bg-slate-100"></div>
-          <span className="text-xs">Occupé</span>
+      {/* Bus front indicator */}
+      <div className="text-center">
+        <div className="mx-auto w-32 rounded-t-full border-2 border-gray-300 bg-gray-100 p-2 text-xs font-medium">
+          Avant du bus
         </div>
       </div>
 
-      <div className="relative mb-8 rounded-lg border border-slate-200 bg-slate-50 p-6">
-        {/* Avant du bus */}
-        <div className="mb-6 flex items-center justify-center">
-          <div className="h-8 w-32 rounded-t-lg bg-slate-300"></div>
-        </div>
+      {/* Seat grid */}
+      <div className="space-y-2">{generateSeats()}</div>
 
-        {/* Sièges */}
-        <div className="grid grid-cols-4 gap-2">
-          {seats.map((seat) => (
-            <Button
-              key={seat.id}
-              variant="outline"
-              size="sm"
-              className={`h-10 w-full ${getSeatClass(seat.status)}`}
-              disabled={seat.status === "occupied"}
-              onClick={() => onSeatSelect(seat.id)}
-            >
-              {seat.id}
-            </Button>
-          ))}
+      {/* Selection info */}
+      <div className="flex flex-wrap items-center justify-between gap-4 rounded-lg bg-gray-50 p-4">
+        <div className="text-sm">
+          <p className="font-medium">Sièges disponibles: {availableSeatsCount}</p>
+          <p className="text-gray-600">Maximum {maxSeats} sièges par réservation</p>
         </div>
-
-        {/* Arrière du bus */}
-        <div className="mt-6 flex items-center justify-center">
-          <div className="h-4 w-32 rounded-b-lg bg-slate-300"></div>
-        </div>
-      </div>
-
-      <div className="rounded-md bg-blue-50 p-4">
-        <div className="flex">
-          <Info className="h-5 w-5 text-blue-500" />
-          <div className="ml-3">
-            <h3 className="text-sm font-medium text-blue-800">Information</h3>
-            <div className="mt-2 text-sm text-blue-700">
-              <p>
-                Les sièges à l'avant du bus offrent plus d'espace pour les jambes. Les sièges à l'arrière peuvent être
-                plus bruyants en raison de la proximité du moteur.
-              </p>
+        {selectedSeats.length > 0 && (
+          <div className="text-sm">
+            <p className="font-medium">Sièges sélectionnés:</p>
+            <div className="flex flex-wrap gap-1">
+              {selectedSeats.map((seat) => (
+                <Badge key={seat} variant="secondary" className="bg-amber-100 text-amber-800">
+                  {seat}
+                </Badge>
+              ))}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   )

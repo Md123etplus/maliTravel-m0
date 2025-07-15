@@ -1,160 +1,161 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+"use client"
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { MapPin, Calendar, Clock, Bus, Wifi, AirVent, Coffee } from "lucide-react"
-import { format } from "date-fns"
-import { fr } from "date-fns/locale"
-
-// Fonction pour obtenir l'icône d'un équipement
-const getAmenityIcon = (amenity: string) => {
-  switch (amenity) {
-    case "wifi":
-      return <Wifi className="h-4 w-4" />
-    case "ac":
-      return <AirVent className="h-4 w-4" />
-    case "snacks":
-      return <Coffee className="h-4 w-4" />
-    default:
-      return null
-  }
-}
-
-// Fonction pour obtenir le libellé d'un équipement
-const getAmenityLabel = (amenity: string) => {
-  switch (amenity) {
-    case "wifi":
-      return "WiFi"
-    case "ac":
-      return "Climatisation"
-    case "snacks":
-      return "Collations"
-    case "usb":
-      return "Prises USB"
-    case "tv":
-      return "Écrans TV"
-    case "blanket":
-      return "Couvertures"
-    default:
-      return amenity
-  }
-}
+import { Clock, MapPin, Users, Bus } from "lucide-react"
 
 interface TripDetailsProps {
   from: string
   to: string
-  departureDate: string
-  departureTime: string
-  arrivalDate: string
-  arrivalTime: string
+  departureDateTime: string
+  arrivalDateTime: string
+  price: number
+  availableSeats: number
   vehicleType: string
   company: string
-  amenities?: string[]
 }
 
 export function TripDetails({
   from,
   to,
-  departureDate,
-  departureTime,
-  arrivalTime,
+  departureDateTime,
+  arrivalDateTime,
+  price,
+  availableSeats,
   vehicleType,
   company,
-  amenities = ["wifi", "ac", "snacks"],
 }: TripDetailsProps) {
-  // Formatage des dates
-  const formattedDepartureDate = new Date(`${departureDate}T${departureTime}:00`)
-  const formattedArrivalTime = new Date(`${departureDate}T${arrivalTime}:00`)
+  // Safe date parsing with error handling
+  const formatDateTime = (dateTimeString: string) => {
+    try {
+      const date = new Date(dateTimeString)
+      if (isNaN(date.getTime())) {
+        return { date: "Date invalide", time: "Heure invalide" }
+      }
+      return {
+        date: date.toLocaleDateString("fr-FR", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        }),
+        time: date.toLocaleTimeString("fr-FR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      }
+    } catch (error) {
+      console.error("Error parsing date:", error)
+      return { date: "Date invalide", time: "Heure invalide" }
+    }
+  }
 
-  // Calcul de la durée du voyage en heures
-  const durationHours = Math.round(
-    (formattedArrivalTime.getTime() - formattedDepartureDate.getTime()) / (1000 * 60 * 60),
-  )
+  // Calculate duration
+  const calculateDuration = () => {
+    try {
+      const departure = new Date(departureDateTime)
+      const arrival = new Date(arrivalDateTime)
+
+      if (isNaN(departure.getTime()) || isNaN(arrival.getTime())) {
+        return "Durée inconnue"
+      }
+
+      const durationMs = arrival.getTime() - departure.getTime()
+      const hours = Math.floor(durationMs / (1000 * 60 * 60))
+      const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60))
+
+      if (hours > 0) {
+        return `${hours}h${minutes > 0 ? ` ${minutes}min` : ""}`
+      } else {
+        return `${minutes}min`
+      }
+    } catch (error) {
+      console.error("Error calculating duration:", error)
+      return "Durée inconnue"
+    }
+  }
+
+  const departure = formatDateTime(departureDateTime)
+  const arrival = formatDateTime(arrivalDateTime)
+  const duration = calculateDuration()
+
+  // Get availability status
+  const getAvailabilityStatus = () => {
+    if (availableSeats === 0) {
+      return { text: "Complet", color: "bg-red-100 text-red-800" }
+    } else if (availableSeats <= 5) {
+      return { text: "Peu de places", color: "bg-orange-100 text-orange-800" }
+    } else {
+      return { text: "Disponible", color: "bg-green-100 text-green-800" }
+    }
+  }
+
+  const availabilityStatus = getAvailabilityStatus()
 
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-lg">Détails du voyage</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-4">
+      <CardHeader>
+        <div className="flex items-center justify-between">
           <div>
-            <Badge
-              className={
-                vehicleType.toLowerCase() === "premium"
-                  ? "bg-amber-100 text-amber-800"
-                  : vehicleType.toLowerCase() === "night"
-                    ? "bg-blue-100 text-blue-800"
-                    : "bg-slate-100 text-slate-800"
-              }
-            >
-              {vehicleType.toLowerCase() === "premium"
-                ? "Premium"
-                : vehicleType.toLowerCase() === "night"
-                  ? "Bus de nuit"
-                  : vehicleType}
-            </Badge>
+            <CardTitle className="text-xl">Détails du voyage</CardTitle>
+            <CardDescription>{company}</CardDescription>
           </div>
-
-          <div className="flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-amber-500" />
-            <div>
-              <div className="font-medium">{from}</div>
-              <div className="text-sm text-slate-500">Gare routière de {from}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Calendar className="h-5 w-5 text-amber-500" />
-            <div>
-              <div className="font-medium">{format(formattedDepartureDate, "EEEE d MMMM yyyy", { locale: fr })}</div>
-              <div className="text-sm text-slate-500">Date de départ</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-amber-500" />
-            <div>
-              <div className="font-medium">
-                {format(formattedDepartureDate, "HH:mm")} - {format(formattedArrivalTime, "HH:mm")}
-              </div>
-              <div className="text-sm text-slate-500">Durée: {durationHours} heures</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <MapPin className="h-5 w-5 text-amber-500" />
-            <div>
-              <div className="font-medium">{to}</div>
-              <div className="text-sm text-slate-500">Gare routière de {to}</div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Bus className="h-5 w-5 text-amber-500" />
-            <div>
-              <div className="font-medium">{company}</div>
-              <div className="text-sm text-slate-500">Compagnie de transport</div>
-            </div>
-          </div>
-
-          {amenities && amenities.length > 0 && (
-            <div className="flex items-center gap-2">
-              <Bus className="h-5 w-5 text-amber-500" />
+          <Badge className={availabilityStatus.color}>{availabilityStatus.text}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Route */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <MapPin className="h-5 w-5 text-amber-500" />
               <div>
-                <div className="font-medium">Équipements</div>
-                <div className="mt-1 flex flex-wrap gap-2">
-                  {amenities.map((amenity, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center gap-1 rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700"
-                    >
-                      {getAmenityIcon(amenity)}
-                      <span>{getAmenityLabel(amenity)}</span>
-                    </div>
-                  ))}
-                </div>
+                <p className="font-semibold">{from}</p>
+                <p className="text-sm text-gray-600">{departure.date}</p>
+                <p className="text-sm font-medium">{departure.time}</p>
               </div>
             </div>
-          )}
+            <div className="flex flex-col items-center">
+              <div className="h-px w-12 bg-gray-300"></div>
+              <Clock className="h-4 w-4 text-gray-400 my-1" />
+              <p className="text-xs text-gray-500">{duration}</p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <MapPin className="h-5 w-5 text-green-500" />
+              <div>
+                <p className="font-semibold">{to}</p>
+                <p className="text-sm text-gray-600">{arrival.date}</p>
+                <p className="text-sm font-medium">{arrival.time}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Vehicle and availability info */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+          <div className="flex items-center space-x-2">
+            <Bus className="h-5 w-5 text-blue-500" />
+            <div>
+              <p className="text-sm text-gray-600">Véhicule</p>
+              <p className="font-medium">{vehicleType}</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Users className="h-5 w-5 text-purple-500" />
+            <div>
+              <p className="text-sm text-gray-600">Places disponibles</p>
+              <p className="font-medium">{availableSeats} sièges</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="h-5 w-5 rounded-full bg-amber-500 flex items-center justify-center">
+              <span className="text-white text-xs font-bold">€</span>
+            </div>
+            <div>
+              <p className="text-sm text-gray-600">Prix par siège</p>
+              <p className="font-medium">{price.toLocaleString()} FCFA</p>
+            </div>
+          </div>
         </div>
       </CardContent>
     </Card>
